@@ -17,7 +17,7 @@ gamble_df = pd.DataFrame(columns=columns)
 
 num_gambles_per_ev_diff = 100
 ev_diff = np.array([-20, -10, 0, 10, 20])
-num_trials = np.array([40, 40, 160, 40, 40])
+num_trials = np.array([20, 20, 80, 20, 20])
 for i in tqdm(range(len(ev_diff))):
     counter = 0
     while True:
@@ -63,4 +63,4 @@ for i in tqdm(range(len(ev_diff))):
                         if counter == num_gambles_per_ev_diff:
                             break
 
-gamble_df.to_csv("data/three_outcome_lotteries.csv", index=False)
+gamble_df.to_csv("../data/three_outcome_lotteries.csv", index=False)
