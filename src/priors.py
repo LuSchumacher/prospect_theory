@@ -18,7 +18,7 @@ def sample_pt_prior(batch_size=32):
 
 @njit
 def sample_mvl_prior(batch_size=32):
-    b_var = skewnorm(2, 0, 1, batch_size)
-    b_loss = skewnorm(2, 0, 1, batch_size)
-    tau = np.random.gamma(1, 6, batch_size)
+    b_var = skewnorm(3, 0, 0.4, batch_size)
+    b_loss = skewnorm(3, 0, 0.4, batch_size)
+    tau = np.random.gamma(1, 0.5, batch_size)
     return np.vstack((b_var, b_loss, tau)).T
