@@ -13,12 +13,12 @@ def skewnorm(alpha, loc=0, scale=1, size=1):
 def sample_pt_prior(batch_size=32):
     lamda = np.random.uniform(0.5, 3, batch_size)
     alpha = np.random.uniform(0.2, 1.2, batch_size)
-    tau = np.random.gamma(1, 10, batch_size)
+    tau = np.random.gamma(1, 6, batch_size)
     return np.vstack((lamda, alpha, tau)).T
 
 @njit
 def sample_mvl_prior(batch_size=32):
-    b_var = skewnorm(2, 0, 4, batch_size)
-    b_loss = skewnorm(2, 0, 4, batch_size)
-    tau = np.random.gamma(1, 10, batch_size)
+    b_var = skewnorm(2, 0, 1, batch_size)
+    b_loss = skewnorm(2, 0, 1, batch_size)
+    tau = np.random.gamma(1, 6, batch_size)
     return np.vstack((b_var, b_loss, tau)).T
