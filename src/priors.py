@@ -13,7 +13,7 @@ def skewnorm(alpha, loc=0, scale=1, size=1):
 def sample_pt_prior(batch_size=32):
     lamda = np.random.uniform(0.5, 3, batch_size)
     alpha = np.random.uniform(0.2, 1.2, batch_size)
-    tau = np.random.gamma(1, 6, batch_size)
+    tau = np.random.gamma(1, 0.5, batch_size)
     return np.vstack((lamda, alpha, tau)).T
 
 @njit
