@@ -12,7 +12,7 @@ def get_choice(tau, utilities):
 
 # --- PT Model ---
 @njit
-def get_inv_pt_utility(alpha, lamda, utilities):
+def get_inv_pt_utility(lamda, alpha, utilities):
     return np.where(
         utilities >= 0,
         utilities ** (1 / alpha),
@@ -20,21 +20,22 @@ def get_inv_pt_utility(alpha, lamda, utilities):
     )
 
 @njit
-def get_pt_utility(alpha, lamda, outcomes):
+def get_pt_utility(lamda, alpha, outcomes):
     num_outcomes = len(outcomes) // 2
     utilities = np.where(
         outcomes >= 0, outcomes ** alpha, -lamda * np.abs(outcomes) ** alpha
     )
     utility_a = np.mean(utilities[:num_outcomes])
     utility_b = np.mean(utilities[num_outcomes:])
-    return get_inv_pt_utility(alpha, lamda, np.array([utility_a, utility_b]))
+    inv_utility = get_inv_pt_utility(lamda, alpha, np.array([utility_a, utility_b]))
+    return inv_utility
 
 @njit
 def sample_pt_model(theta, context):
-    alpha, lamda, tau = theta
+    lamda, alpha, tau = theta
     choices = np.zeros(context.shape[0])
     for i in range(context.shape[0]):
-        utilities = get_pt_utility(alpha, lamda, context[i])
+        utilities = get_pt_utility(lamda, alpha, context[i])
         choices[i] = get_choice(tau, utilities)
     return choices
 
