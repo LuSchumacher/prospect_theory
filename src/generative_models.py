@@ -27,8 +27,8 @@ def get_pt_utility(lamda, alpha, outcomes):
     )
     utility_a = np.mean(utilities[:num_outcomes])
     utility_b = np.mean(utilities[num_outcomes:])
-    inv_utility = get_inv_pt_utility(lamda, alpha, np.array([utility_a, utility_b]))
-    return inv_utility
+    # inv_utility = get_inv_pt_utility(lamda, alpha, np.array([utility_a, utility_b]))
+    return np.array([utility_a, utility_b])
 
 @njit
 def sample_pt_model(theta, context):
