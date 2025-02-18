@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
-context_1 = pd.read_csv('../data/three_outcome_lotteries_newnew.csv')
-context_2 = pd.read_csv('../data/three_outcome_lotteries_traditional_new.csv')
+context_1 = pd.read_csv('../data/three_outcome_lotteries_new.csv')
+context_2 = pd.read_csv('../data/three_outcome_lotteries_traditional.csv')
 context = [context_1, context_2]
 
-CONTEXT = np.zeros((2, 100, 6))
+CONTEXT = np.zeros((2, 120, 6))
 for i in range(2):
     gamble_df = context[i]
     CONTEXT[i] = gamble_df[[

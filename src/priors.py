@@ -22,10 +22,17 @@ def truncated_normal(mean, sigma, lower, upper, size=1):
 
 @njit
 def sample_pt_prior(batch_size=32):
-    lamda = truncated_normal(2, 0.8, 1, 3, batch_size)
-    alpha = truncated_normal(0.8, 0.3, 0, 1.2, batch_size)
-    tau = np.random.gamma(1, 1, batch_size)
+    lamda = np.random.uniform(0.8, 3.0, batch_size)
+    alpha = np.random.uniform(0.0, 1.2, batch_size)
+    tau = np.random.uniform(0.0, 5.0, batch_size)
     return np.vstack((lamda, alpha, tau)).T
+
+# @njit
+# def sample_pt_prior(batch_size=32):
+#     lamda = truncated_normal(2, 0.8, 1, 3, batch_size)
+#     alpha = truncated_normal(0.8, 0.3, 0, 1.2, batch_size)
+#     tau = np.random.gamma(1, 1, batch_size)
+#     return np.vstack((lamda, alpha, tau)).T
 
 @njit
 def sample_mvl_prior(batch_size=32):
