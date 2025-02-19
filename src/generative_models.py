@@ -1,6 +1,10 @@
 import numpy as np
 from numba import njit
+import bayesflow as bf
+from src.priors import pt_prior, mvl_prior
+from src.context import context_gen
 
+#--- Helper Functions ---#
 @njit
 def get_choice(tau, utilities):
     z = utilities - max(utilities)
@@ -10,14 +14,18 @@ def get_choice(tau, utilities):
     alt = np.array([0, 1])
     return alt[np.searchsorted(np.cumsum(softmax), np.random.random(), side="right")]
 
-# --- PT Model ---
-@njit
-def get_inv_pt_utility(lamda, alpha, utilities):
-    return np.where(
-        utilities >= 0,
-        utilities ** (1 / alpha),
-        -(np.abs(utilities) / lamda) ** (1 / alpha)
-    )
+
+#--- PT Model ---#
+PT_PRIOR_MEAN  = np.array([2.1,  0.7, 10])
+PT_PRIOR_STD  = np.array([0.6,  0.3, 10])
+
+# @njit
+# def get_inv_pt_utility(lamda, alpha, utilities):
+#     return np.where(
+#         utilities >= 0,
+#         utilities ** (1 / alpha),
+#         -(np.abs(utilities) / lamda) ** (1 / alpha)
+#     )
 
 @njit
 def get_pt_utility(lamda, alpha, outcomes):
@@ -27,7 +35,6 @@ def get_pt_utility(lamda, alpha, outcomes):
     )
     utility_a = np.mean(utilities[:num_outcomes])
     utility_b = np.mean(utilities[num_outcomes:])
-    # inv_utility = get_inv_pt_utility(lamda, alpha, np.array([utility_a, utility_b]))
     return np.array([utility_a, utility_b])
 
 @njit
@@ -39,7 +46,32 @@ def sample_pt_model(theta, context):
         choices[i] = get_choice(tau, utilities)
     return choices
 
+pt_simulator = bf.simulation.Simulator(
+    simulator_fun=sample_pt_model,
+    context_generator=context_gen
+)
+
+pt_model = bf.simulation.GenerativeModel(
+    prior=pt_prior,
+    simulator=pt_simulator,
+    name="pt_model",
+    skip_test=True
+)
+
+def pt_configurator(forward_dict):
+    out_dict = {}
+    data = forward_dict["sim_data"][:, :, None]
+    context = np.array(forward_dict["sim_batchable_context"]) / 50
+    out_dict["summary_conditions"] = np.c_[data, context].astype(np.float32)
+    params = forward_dict["prior_draws"].astype(np.float32)
+    out_dict["parameters"] = (params - PT_PRIOR_MEAN) / PT_PRIOR_STD
+    return out_dict
+
+
 # --- MVL Model ---
+MVL_PRIOR_MEAN = np.array([0.3, 0.3, 1])
+MVL_PRIOR_STD = np.array([0.26, 0.26, 0.57])
+
 @njit
 def get_mvl_utility(b_var, b_loss, outcomes):
     num_outcomes = len(outcomes) // 2
@@ -57,3 +89,24 @@ def sample_mvl_model(theta, context):
         utilities = get_mvl_utility(b_var, b_loss, context[i])
         choices[i] = get_choice(tau, utilities)
     return choices
+
+mvl_simulator = bf.simulation.Simulator(
+    simulator_fun=sample_mvl_model,
+    context_generator=context_gen
+)
+
+mvl_model = bf.simulation.GenerativeModel(
+    prior=mvl_prior,
+    simulator=mvl_simulator,
+    name="mvl_model",
+    skip_test=True
+)
+
+def mvl_configurator(forward_dict):
+    out_dict = {}
+    data = forward_dict["sim_data"][:, :, None]
+    context = np.array(forward_dict["sim_batchable_context"]) / 50
+    out_dict["summary_conditions"] = np.c_[data, context].astype(np.float32)
+    params = forward_dict["prior_draws"]
+    out_dict["parameters"] = ((params - MVL_PRIOR_MEAN) / MVL_PRIOR_STD).astype(np.float32)
+    return out_dict

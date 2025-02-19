@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import bayesflow as bf
 from numba import njit
 
 context_1 = pd.read_csv('../data/three_outcome_lotteries_new.csv')
@@ -18,3 +19,7 @@ for i in range(2):
 def get_context():
     rand_idx = np.random.randint(0, 1 + 1)
     return CONTEXT[rand_idx]
+
+context_gen = bf.simulation.ContextGenerator(
+    batchable_context_fun=get_context
+)
