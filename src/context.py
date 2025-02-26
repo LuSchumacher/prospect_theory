@@ -3,11 +3,11 @@ import pandas as pd
 import bayesflow as bf
 from numba import njit
 
-context_1 = pd.read_csv('../data/three_outcome_lotteries_new.csv')
-context_2 = pd.read_csv('../data/three_outcome_lotteries_traditional.csv')
+context_1 = pd.read_csv('../data/lotteries_new.csv')
+context_2 = pd.read_csv('../data/lotteries_old.csv')
 context = [context_1, context_2]
 
-CONTEXT = np.zeros((2, 120, 6))
+CONTEXT = np.zeros((2, 80, 6))
 for i in range(2):
     gamble_df = context[i]
     CONTEXT[i] = gamble_df[[
