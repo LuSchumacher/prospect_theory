@@ -19,13 +19,13 @@ def get_choice(tau, utilities):
 PT_PRIOR_MEAN  = np.array([2.1,  0.7, 10])
 PT_PRIOR_STD  = np.array([0.6,  0.3, 10])
 
-# @njit
-# def get_inv_pt_utility(lamda, alpha, utilities):
-#     return np.where(
-#         utilities >= 0,
-#         utilities ** (1 / alpha),
-#         -(np.abs(utilities) / lamda) ** (1 / alpha)
-#     )
+@njit
+def get_inv_pt_utility(lamda, alpha, utilities):
+    return np.where(
+        utilities >= 0,
+        utilities ** (1 / alpha),
+        -(np.abs(utilities) / lamda) ** (1 / alpha)
+    )
 
 @njit
 def get_pt_utility(lamda, alpha, outcomes):
@@ -43,6 +43,8 @@ def sample_pt_model(theta, context):
     choices = np.zeros(context.shape[0])
     for i in range(context.shape[0]):
         utilities = get_pt_utility(lamda, alpha, context[i])
+        # inv_utilities = get_inv_pt_utility(lamda, alpha, utilities)
+        # choices[i] = get_choice(tau, inv_utilities)
         choices[i] = get_choice(tau, utilities)
     return choices
 

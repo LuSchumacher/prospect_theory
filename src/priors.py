@@ -31,7 +31,7 @@ pt_param_names = (r'$\lambda$', r'$\alpha$', r'$\tau$')
 def sample_pt_prior(batch_size=32):
     lamda = truncated_normal(2, 0.75, 1, 4, batch_size)
     alpha = np.random.beta(2.5, 5, batch_size) * 2
-    tau = np.random.gamma(1, 10, batch_size)
+    tau = np.random.gamma(1, 10, batch_size) # truncated_normal(0, 8, 0, 20, batch_size)
     return np.vstack((lamda, alpha, tau)).T
 
 pt_prior = bf.simulation.Prior(
