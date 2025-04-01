@@ -7,7 +7,7 @@ context_1 = pd.read_csv('../data/lotteries_gain_new.csv')
 context_2 = pd.read_csv('../data/lotteries_gain_old.csv')
 context = [context_1, context_2]
 
-CONTEXT = np.zeros((2, 140, 6))
+CONTEXT = np.zeros((2, 100, 6))
 for i in range(2):
     gamble_df = context[i]
     CONTEXT[i] = gamble_df[[

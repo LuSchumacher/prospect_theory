@@ -16,13 +16,8 @@ def get_choice(tau, utilities):
 
 
 #--- PT Model ---#
-# PT_PRIOR_MEAN  = np.array([2.1,  0.7, 10])
-# PT_PRIOR_STD  = np.array([0.6,  0.3, 10])
-# PT_PRIOR_MEAN  = np.array([2.1,  0.7, 6.2])
-# PT_PRIOR_STD  = np.array([0.6,  0.3, 4.5])
-# inv_util_2
-PT_PRIOR_MEAN  = np.array([1.9,  0.7, 2.3])
-PT_PRIOR_STD  = np.array([0.6,  0.3, 1.8])
+PT_PRIOR_MEAN  = np.array([1.9,  0.7, 1.9])
+PT_PRIOR_STD  = np.array([0.6,  0.3, 1.4])
 
 @njit
 def get_inv_pt_utility(lamda, alpha, utilities):
@@ -50,19 +45,7 @@ def sample_pt_model(theta, context):
         utilities = get_pt_utility(lamda, alpha, context[i])
         inv_utilities = get_inv_pt_utility(lamda, alpha, utilities)
         choices[i] = get_choice(tau, inv_utilities)
-        # choices[i] = get_choice(tau, utilities)
     return choices
-
-# @njit
-# def sample_pt_model(theta, context):
-#     lamda, alpha, tau = theta
-#     choices = np.zeros(context.shape[0])
-#     for i in range(context.shape[0]):
-#         utilities = get_pt_utility(lamda, alpha, context[i])
-#         # inv_utilities = get_inv_pt_utility(lamda, alpha, utilities)
-#         # choices[i] = get_choice(tau, inv_utilities)
-#         choices[i] = get_choice(tau, utilities)
-#     return choices
 
 pt_simulator = bf.simulation.Simulator(
     simulator_fun=sample_pt_model,
