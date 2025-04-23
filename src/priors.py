@@ -37,6 +37,22 @@ pt_prior = bf.simulation.Prior(
     param_names=pt_param_names
 )
 
+#--- CPT Prior ---#
+cpt_param_names = (r'$\lambda$', r'$\alpha$', r'$\gamma$', r'$\tau$')
+
+@njit
+def sample_cpt_prior(batch_size=32):
+    lamda = np.random.uniform(0.8, 3.0, batch_size)
+    alpha = np.random.uniform(0.2, 1.2, batch_size)
+    gamma = truncated_normal(0.6, 0.25, 0.0, 2.5, batch_size)
+    tau = truncated_normal(0, 2.5, 0, 6, batch_size)
+    return np.vstack((lamda, alpha, gamma, tau)).T
+
+cpt_prior = bf.simulation.Prior(
+    batch_prior_fun=sample_cpt_prior,
+    param_names=cpt_param_names
+)
+
 #--- MVL Prior ---#
 mvl_param_names = (r'$b_{\text{var}}$', r'$b_{\text{loss}}$', r'$\tau$')
 

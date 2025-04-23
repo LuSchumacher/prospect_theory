@@ -1,0 +1,81 @@
+library(tidyverse)
+library(magrittr)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+path <- "pilot_data/"
+files <- list.files(path, pattern = ".csv")
+
+df <- read_csv(paste0(path, files))
+
+payment_df <- df %>% 
+  select(PROLIFIC_PID, bonus_payment) %>% 
+  drop_na(bonus_payment)
+
+attention_check <- df %>% 
+  select(
+    PROLIFIC_PID,
+    mouse_resp_3.clicked_name,
+    text_response_box.text
+  ) %>% 
+  filter(
+    !is.na(mouse_resp_3.clicked_name) | !is.na(text_response_box.text)
+  )
+
+df %<>% 
+  mutate(id = dense_rank(PROLIFIC_PID)) %>% 
+  select(
+    id, age, sex, trials.thisN,
+    mouse_resp.clicked_name,
+    mouse_resp.time,
+    outcome_a1:skew_diff
+  ) %>% 
+  rename(
+    choice = mouse_resp.clicked_name,
+    rt = mouse_resp.time,
+    trial = trials.thisN
+  ) %>% 
+  arrange(id) %>% 
+  drop_na(choice) %>% 
+  mutate(
+    rt = str_replace_all(rt, "[^0-9.]", ""),
+    rt = as.numeric(rt),
+    choice = str_replace(choice, "^[^ab]*([ab]).*", "\\1"),
+    resp = ifelse(choice == "a", 0, 1),
+    condition = ifelse(var_diff < 0, "new", "old")
+  ) %>% 
+  relocate(resp, .after = choice) %>% 
+  relocate(condition, .after = trial) %>% 
+  group_by(id) %>% 
+  mutate(trial = 1:200) %>% 
+  ungroup()
+
+write_csv(df, "pilot_data_prepped.csv")
+
+summary <- df %>% 
+  group_by(id, condition, ev_diff) %>% 
+  summarise(mean_resp = mean(resp)) %>% 
+  ungroup() %>% 
+  group_by(condition, ev_diff) %>% 
+  summarise(
+    mean = mean(mean_resp),
+    std = sd(mean_resp)
+  ) %>% 
+  mutate(ev_diff = as.factor(ev_diff))
+
+summary %>% 
+  ggplot(aes(x = ev_diff, y = mean, colour = condition)) + 
+  geom_pointrange(
+    aes(ymin = mean - std, ymax = mean + std),
+    position = position_dodge(width = 0.25),
+    size = 0.75, linewidth = 1
+  ) +
+  geom_hline(yintercept = 0.5, linetype = "dashed") +
+  theme_classic() + 
+  scale_y_continuous(limits = c(-0.1, 1.1), breaks = seq(0, 1, 0.2)) +
+  labs(
+    x = "Difference in EV",
+    y = "Proportion of choosing B",
+    color = "Lottery type"
+  )
+
