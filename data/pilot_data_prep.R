@@ -63,6 +63,11 @@ summary <- df %>%
   ) %>% 
   mutate(ev_diff = as.factor(ev_diff))
 
+FONT_SIZE_1 <- 22
+FONT_SIZE_2 <- 20
+FONT_SIZE_3 <- 18
+COLOR_PALETTE <- c('#27374D', '#B70404')
+
 summary %>% 
   ggplot(aes(x = ev_diff, y = mean, colour = condition)) + 
   geom_pointrange(
@@ -71,11 +76,32 @@ summary %>%
     size = 0.75, linewidth = 1
   ) +
   geom_hline(yintercept = 0.5, linetype = "dashed") +
-  theme_classic() + 
   scale_y_continuous(limits = c(-0.1, 1.1), breaks = seq(0, 1, 0.2)) +
+  scale_color_manual(values = COLOR_PALETTE) +
   labs(
     x = "Difference in EV",
     y = "Proportion of choosing B",
     color = "Lottery type"
+  ) +
+  ggthemes::theme_tufte() + 
+  theme(
+    axis.line = element_line(size = .5, color = "#969696"),
+    axis.ticks = element_line(color = "#969696"),
+    axis.text.x = element_text(size = FONT_SIZE_3,
+                               vjust = 0.5),
+    axis.text.y = element_text(size = FONT_SIZE_3),
+    strip.text.x = element_text(size = FONT_SIZE_2),
+    strip.text.y = element_text(size = FONT_SIZE_2, angle = 0),
+    text = element_text(size = FONT_SIZE_2),
+    plot.title = element_text(size = FONT_SIZE_1,
+                              hjust = 0.5,
+                              face = 'bold'),
+    panel.grid = element_line(color = "#969696",
+                              size = 0.2,
+                              linetype = 1),
+    legend.spacing.y = unit(0.25, 'cm'),
+    axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+    axis.title.x = element_text(margin = margin(t = 15, r = 0, b =05, l = 0))
   )
 
+ggsave("../plots/pilot_data_plot.pdf", width=8, height = 5)
