@@ -9,7 +9,7 @@ FONT_SIZE_2 <- 20
 FONT_SIZE_3 <- 18
 COLOR_PALETTE <- c('#27374D', '#B70404')
 
-path <- "pilot_data_2/"
+path <- "pilot_data_3/"
 files <- list.files(path, pattern = ".csv")
 
 df <- read_csv(paste0(path, files))
@@ -36,6 +36,26 @@ sanity_check <- df %>%
   )
 
 df %<>% 
+  filter(
+    PROLIFIC_PID != "6773b3c0cee988907232d527",
+    PROLIFIC_PID != "670e735764f379104d34dac2",
+    PROLIFIC_PID != "6154524a9852a6415f72d60c",
+    PROLIFIC_PID != "6826217470084516f306ec3c",
+    PROLIFIC_PID != "66d9fc2d2b46f520118ea65f",
+    PROLIFIC_PID != "6129ed2fa30b593821361cb3",
+    PROLIFIC_PID != "65577234800b1fea9ae3cf4d",
+    PROLIFIC_PID != "67237e8fe4d32fbb53aabc67",
+    PROLIFIC_PID != "66e7209b6ee5ee81f22afeb5",
+    PROLIFIC_PID != "611d0afbb2a19acfd012545b",
+    PROLIFIC_PID != "6129ed2fa30b593821361cb3",
+    PROLIFIC_PID != "61501f8fdda44b1783c3556b",
+    PROLIFIC_PID != "6154524a9852a6415f72d60c",
+    PROLIFIC_PID != "644bfef77d2220b964ca0c30",
+    PROLIFIC_PID != "66bf8e9849e9d38db3d8d40e",
+    PROLIFIC_PID != "66e0dc819ca421d2e6da6d67",
+    PROLIFIC_PID != "670e735764f379104d34dac2",
+    PROLIFIC_PID != "670e735764f379104d34dac2",
+  ) %>%
   filter(
     PROLIFIC_PID != "66e0dc819ca421d2e6da6d67",
     PROLIFIC_PID != "61501f8fdda44b1783c3556b",
@@ -74,14 +94,10 @@ df %<>%
   mutate(
     condition = as.factor(condition)
   )
-  # group_by(id) %>% 
-  # mutate(trial = 1:172) %>% 
-  # ungroup()
 
-# write_csv(df, "pilot_data_prepped.csv")
+write_csv(df, "pilot_2_data_prepped_excluded.csv")
 
 summary <- df %>% 
-  # filter(id != 5) %>% 
   group_by(id, condition, ev_diff) %>% 
   summarise(mean_resp = mean(resp)) %>% 
   ungroup() %>% 
@@ -132,13 +148,14 @@ summary %>%
     legend.spacing.y = unit(0.25, 'cm'),
     axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
     axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
-  )
+  ) 
 
 
-ggsave("../plots/pilot_data_plot.pdf", width = 8, height = 5)
+ggsave("../plots/new_approach/pilot_data_plot_excluded.pdf", width = 8, height = 5)
 
 
 summary <- df %>% 
+  mutate(id = dense_rank(id)) %>% 
   group_by(id, condition, ev_diff) %>% 
   summarise(mean_resp = mean(resp))
 
@@ -156,6 +173,7 @@ summary %>%
   ) +
   geom_hline(yintercept = 0.5, linetype = "dashed") +
   scale_y_continuous(limits = c(-0.1, 1.1), breaks = seq(0, 1, 0.2)) +
+  scale_x_continuous(breaks = unique(df$ev_diff)) +
   scale_color_manual(values = COLOR_PALETTE) +
   labs(
     x = "Difference in EV",
@@ -183,6 +201,8 @@ summary %>%
     axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
   ) + 
   facet_wrap(~id)
+
+ggsave("../plots/new_approach/pilot_data_plot_subjects.pdf", width = 12, height = 10)
 
 
 model_formula <- resp ~ ev_diff * condition + (ev_diff * condition | id)
