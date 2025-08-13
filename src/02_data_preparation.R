@@ -9,7 +9,7 @@ FONT_SIZE_2 <- 20
 FONT_SIZE_3 <- 18
 COLOR_PALETTE <- c('#27374D', '#B70404')
 
-path <- "real_data/"
+path <- "../data/study_data/"
 files <- list.files(path, pattern = ".csv")
 
 df <- read_csv(paste0(path, files))
@@ -35,15 +35,15 @@ sanity_check <- df %>%
   )
 
 df %<>%
-  # filter(
-  #   PROLIFIC_PID != "60a033197af9369e76946104",
-  #   PROLIFIC_PID != "615e233e180ad299aaea710c",
-  #   PROLIFIC_PID != "6666fb1567243aa56ed8cffa",
-  #   PROLIFIC_PID != "5fe7bc4ec39215684de426f4",
-  #   PROLIFIC_PID != "676aa6bfdda58087a94af1ea",
-  #   PROLIFIC_PID != "5e70bd5480f43a0009625d4c",
-  #   PROLIFIC_PID != "6724b9788642a492d3a55188",
-  # ) %>%
+  filter(
+    PROLIFIC_PID != "60a033197af9369e76946104",
+    PROLIFIC_PID != "615e233e180ad299aaea710c",
+    PROLIFIC_PID != "6666fb1567243aa56ed8cffa",
+    PROLIFIC_PID != "5fe7bc4ec39215684de426f4",
+    PROLIFIC_PID != "676aa6bfdda58087a94af1ea",
+    PROLIFIC_PID != "5e70bd5480f43a0009625d4c",
+    PROLIFIC_PID != "6724b9788642a492d3a55188",
+  ) %>%
   mutate(id = dense_rank(PROLIFIC_PID)) %>%
   select(
     id, age, sex, trials.thisN, lottery_type,
@@ -65,12 +65,13 @@ df %<>%
   ) %>% 
   relocate(resp, .after = choice) %>% 
   relocate(lottery_type, .after = trial) %>% 
+  relocate(PROLIFIC_PID, .after = id) %>% 
   filter(sanity_check == FALSE) %>% 
   mutate(
     lottery_type = as.factor(lottery_type)
   )
 
-write_csv(df, "pilot_2_data_prepped_excluded.csv")
+write_csv(df, "../data/study_data_prepared.csv")
 
 rt_summary <- df %>% 
   group_by(PROLIFIC_PID, lottery_type) %>% 
@@ -80,12 +81,6 @@ rt_summary <- df %>%
     min_rt = min(rt),
     max_rt = max(rt)
   )
-  
-df %>% 
-  ggplot(aes(x=rt)) +
-  geom_density() +
-  facet_grid(~id) + 
-  scale_x_continuous(limits = c(0, 30))
 
 summary <- df %>% 
   group_by(id, lottery_type, ev_diff) %>% 
@@ -121,7 +116,7 @@ summary %>%
   ) +
   ggthemes::theme_tufte() + 
   theme(
-    axis.line = element_line(size = .5, color = "#969696"),
+    axis.line = element_line(linewidth = .5, color = "#969696"),
     axis.ticks = element_line(color = "#969696"),
     axis.text.x = element_text(size = FONT_SIZE_3,
                                vjust = 0.5),
@@ -140,15 +135,9 @@ summary %>%
     axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
   ) 
 
-
-ggsave("../plots/new_approach/pilot_data_plot_excluded.pdf", width = 8, height = 5)
-
-
 summary <- df %>% 
-  # mutate(id = dense_rank(id)) %>% 
   group_by(PROLIFIC_PID, lottery_type, ev_diff) %>% 
   summarise(mean_resp = mean(resp))
-
 
 summary %>% 
   ggplot(aes(x = ev_diff, y = mean_resp, colour = lottery_type)) + 
@@ -194,7 +183,6 @@ summary %>%
 
 ggsave("../plots/new_approach/pilot_data_plot_subjects.pdf", width = 12, height = 10)
 
-
 model_formula <- resp ~ ev_diff * lottery_type + (ev_diff * lottery_type | id)
 
 model_priors <- prior(normal(0, 1.0), class = b)
@@ -209,19 +197,16 @@ model_fit <- brm(
   sample_prior = "yes"
 )
 
-bf <- 1 / hypothesis(model_fit, "conditionold = 0")$hypothesis["Evid.Ratio"]
-bf <- hypothesis(model_fit, "conditionold > 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(model_fit, "ev_diff = 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(model_fit, "ev_diff < 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(model_fit, "ev_diff:conditionold = 0")$hypothesis["Evid.Ratio"]
-
-
-model_fit
 conditional_effects(model_fit)
 
-# 
-# plot(hypothesis(model_fit, "ev_diff < 0"))
-plot(hypothesis(model_fit, "conditionold > 0"))
-# plot(hypothesis(model_fit, "ev_diff:conditionold < 0"))
+bf <- 1 / hypothesis(model_fit, "lottery_typeunconfounded = 0")$hypothesis["Evid.Ratio"]
+bf <- hypothesis(model_fit, "lottery_typeunconfounded < 0")$hypothesis["Evid.Ratio"]
+bf <- 1 / hypothesis(model_fit, "ev_diff = 0")$hypothesis["Evid.Ratio"]
+bf <- hypothesis(model_fit, "ev_diff < 0")$hypothesis["Evid.Ratio"]
+bf <- 1 / hypothesis(model_fit, "ev_diff:lottery_typeunconfounded = 0")$hypothesis["Evid.Ratio"]
 
-pp_check(model_fit, ndraws=100)
+plot(hypothesis(model_fit, "lottery_typeunconfounded < 0"))
+plot(hypothesis(model_fit, "ev_diff < 0"))
+plot(hypothesis(model_fit, "ev_diff:lottery_typeunconfounded = 0"))
+
+pp_check(model_fit, ndraws=50)

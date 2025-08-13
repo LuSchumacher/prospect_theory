@@ -3,11 +3,14 @@ library(magrittr)
 library(cmdstanr)
 library(bayesplot)
 
+FONT_SIZE_1 <- 22
+FONT_SIZE_2 <- 20
+FONT_SIZE_3 <- 18
+COLOR_PALETTE <- c('#27374D', '#B70404')
+
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-df <- read_csv('../../data/pilot_2_data_prepped_excluded.csv')
-# df <- df %>% 
-#   filter(id == 1)
+df <- read_csv('../../data/study_data_prepared.csv')
 
 N <- length(unique(df$id))
 `T` <- nrow(df)
@@ -15,7 +18,7 @@ stan_data = list(
   `T`        = `T`,
   N          = N,
   subject_id = df$id,
-  condition  = ifelse(df$condition == "old", 0, 1),
+  condition  = ifelse(df$lottery_type == "confounded", 0, 1),
   outcome_a  = as.matrix(df[, c("outcome_a1", "outcome_a2", "outcome_a3")]),
   outcome_b  = as.matrix(df[, c("outcome_b1", "outcome_b2", "outcome_b3")]),
   choice    = df$resp
@@ -127,7 +130,7 @@ fit_pt_model <- pt_model$sample(
 fit_pt_model$summary(variables = PARAM_NAMES)
 mcmc_trace(
   fit_pt_model$draws(inc_warmup = TRUE),
-  n_warmup = 2000,
+  n_warmup = 1000,
   pars=PARAM_NAMES
 )
 
@@ -135,29 +138,86 @@ y_rep <- fit_pt_model$draws("y_rep", format = "matrix")
 y_obs <- df$choice
 
 NUM_PP_DRAWS <- 500
-idx <- sample(1:8000, NUM_PP_DRAWS)
+idx <- sample(1:4000, NUM_PP_DRAWS)
 
 pred_data <- y_rep %>% 
   as_tibble() %>% 
-  mutate(draw = 1:8000) %>% 
+  mutate(draw = 1:4000) %>% 
   filter(draw %in% idx) %>% 
   pivot_longer(-draw, names_to = "trial", values_to = "resp") %>% 
   mutate(
     trial = str_extract(trial, "(?<=\\[)\\d+(?=\\])"),
-    condition = rep(df$condition, times=NUM_PP_DRAWS),
+    lottery_type = rep(df$lottery_type, times=NUM_PP_DRAWS),
     ev_diff = rep(df$ev_diff, times=NUM_PP_DRAWS)
   )
 
-pred_summary <- pred_data %>% 
-  group_by(condition, ev_diff) %>% 
-  summarise(mean_resp = mean(resp))
+pred_summary <- pred_data %>%
+  group_by(draw, lottery_type, ev_diff) %>% 
+  summarise(
+    resp_mean = mean(resp),   # mean within each draw
+    .groups = "drop"
+  ) %>%
+  group_by(lottery_type, ev_diff) %>%
+  summarise(
+    mean_resp = mean(resp_mean),             # mean across draws
+    lower = quantile(resp_mean, 0.025),     # 95% CI across draws
+    upper = quantile(resp_mean, 0.975),
+    .groups = "drop"
+  )
 
 emp_summary <- df %>% 
-  group_by(condition, ev_diff) %>% 
-  summarise(mean_resp = mean(resp))
+  group_by(lottery_type, ev_diff) %>% 
+  summarise(mean_resp = mean(resp), .groups = "drop")
 
-pred_summary %>% 
-  ggplot(aes(x = ev_diff, y = mean_resp, color = condition)) +
-  geom_point() +
-  geom_point(data = emp_summary, color="black")
+ggplot(pred_summary, aes(
+  x = ev_diff, y = mean_resp,
+  color = lottery_type,
+  fill = lottery_type
+  )) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+  geom_line(
+    data = emp_summary,
+    aes(
+      group = lottery_type,
+      color = lottery_type
+    ),
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  geom_hline(yintercept = 0.5, linetype = "dashed") +
+  geom_point(
+    data = emp_summary,
+    aes(color = lottery_type),
+    size = 2.5
+  ) +
+  scale_fill_manual(values = COLOR_PALETTE, guide = "none") +
+  scale_color_manual(values = COLOR_PALETTE) +
+  scale_x_continuous(breaks = unique(df$ev_diff)) +
+  scale_y_continuous(limits = c(-0.1, 1.1), breaks = seq(0, 1, 0.2)) +
+  labs(
+    x = "Difference in EV",
+    y = "P(choose risky)",
+    color = "Gamble type"
+  ) +
+  ggthemes::theme_tufte() + 
+  theme(
+    axis.line = element_line(size = .5, color = "#969696"),
+    axis.ticks = element_line(color = "#969696"),
+    axis.text.x = element_text(size = FONT_SIZE_3,
+                               vjust = 0.5),
+    axis.text.y = element_text(size = FONT_SIZE_3),
+    strip.text.x = element_text(size = FONT_SIZE_2),
+    strip.text.y = element_text(size = FONT_SIZE_2, angle = 0),
+    text = element_text(size = FONT_SIZE_2),
+    plot.title = element_text(size = FONT_SIZE_1,
+                              hjust = 0.5,
+                              face = 'bold'),
+    panel.grid = element_line(color = "#969696",
+                              size = 0.2,
+                              linetype = 1),
+    legend.spacing.y = unit(0.25, 'cm'),
+    axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+    axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
+  )
+
 
