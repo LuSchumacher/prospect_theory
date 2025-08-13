@@ -1,1 +1,1 @@
-# prospect_theory
+# Disentangling sensitivity to losses and variance in mixed gambles
