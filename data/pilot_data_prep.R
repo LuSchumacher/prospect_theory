@@ -9,7 +9,7 @@ FONT_SIZE_2 <- 20
 FONT_SIZE_3 <- 18
 COLOR_PALETTE <- c('#27374D', '#B70404')
 
-path <- "pilot_data_3/"
+path <- "real_data/"
 files <- list.files(path, pattern = ".csv")
 
 df <- read_csv(paste0(path, files))
@@ -18,62 +18,38 @@ payment_df <- df %>%
   select(PROLIFIC_PID, bonus_payment) %>% 
   drop_na(bonus_payment)
 
-attention_check <- df %>% 
+attention_check <- df %>%
   select(
     PROLIFIC_PID,
-    mouse_resp_3.clicked_name,
     text_response_box.text
-  ) %>% 
+  ) %>%
   filter(
-    !is.na(mouse_resp_3.clicked_name) | !is.na(text_response_box.text)
+    !is.na(text_response_box.text)
   )
 
-sanity_check <- df %>% 
-  filter(sanity_check == TRUE) %>% 
+sanity_check <- df %>%
+  filter(sanity_check == TRUE) %>%
   select(
     PROLIFIC_PID,
     mouse_resp.clicked_name
   )
 
-df %<>% 
-  filter(
-    PROLIFIC_PID != "6773b3c0cee988907232d527",
-    PROLIFIC_PID != "670e735764f379104d34dac2",
-    PROLIFIC_PID != "6154524a9852a6415f72d60c",
-    PROLIFIC_PID != "6826217470084516f306ec3c",
-    PROLIFIC_PID != "66d9fc2d2b46f520118ea65f",
-    PROLIFIC_PID != "6129ed2fa30b593821361cb3",
-    PROLIFIC_PID != "65577234800b1fea9ae3cf4d",
-    PROLIFIC_PID != "67237e8fe4d32fbb53aabc67",
-    PROLIFIC_PID != "66e7209b6ee5ee81f22afeb5",
-    PROLIFIC_PID != "611d0afbb2a19acfd012545b",
-    PROLIFIC_PID != "6129ed2fa30b593821361cb3",
-    PROLIFIC_PID != "61501f8fdda44b1783c3556b",
-    PROLIFIC_PID != "6154524a9852a6415f72d60c",
-    PROLIFIC_PID != "644bfef77d2220b964ca0c30",
-    PROLIFIC_PID != "66bf8e9849e9d38db3d8d40e",
-    PROLIFIC_PID != "66e0dc819ca421d2e6da6d67",
-    PROLIFIC_PID != "670e735764f379104d34dac2",
-    PROLIFIC_PID != "670e735764f379104d34dac2",
-  ) %>%
-  filter(
-    PROLIFIC_PID != "66e0dc819ca421d2e6da6d67",
-    PROLIFIC_PID != "61501f8fdda44b1783c3556b",
-    PROLIFIC_PID != "6129ed2fa30b593821361cb3",
-    PROLIFIC_PID != "66bf8e9849e9d38db3d8d40e",
-    PROLIFIC_PID != "66d9fc2d2b46f520118ea65f",
-    PROLIFIC_PID != "65577234800b1fea9ae3cf4d",
-    PROLIFIC_PID != "67237e8fe4d32fbb53aabc67",
-    PROLIFIC_PID != "66e7209b6ee5ee81f22afeb5"
-  ) %>%
-  mutate(id = dense_rank(PROLIFIC_PID)) %>% 
+df %<>%
+  # filter(
+  #   PROLIFIC_PID != "60a033197af9369e76946104",
+  #   PROLIFIC_PID != "615e233e180ad299aaea710c",
+  #   PROLIFIC_PID != "6666fb1567243aa56ed8cffa",
+  #   PROLIFIC_PID != "5fe7bc4ec39215684de426f4",
+  #   PROLIFIC_PID != "676aa6bfdda58087a94af1ea",
+  #   PROLIFIC_PID != "5e70bd5480f43a0009625d4c",
+  #   PROLIFIC_PID != "6724b9788642a492d3a55188",
+  # ) %>%
+  mutate(id = dense_rank(PROLIFIC_PID)) %>%
   select(
-    id, age, sex, trials.thisN,
-    mouse_resp.clicked_name,
-    mouse_resp.time,
-    outcome_a1:skew_diff,
-    sanity_check
-  ) %>% 
+    id, age, sex, trials.thisN, lottery_type,
+    mouse_resp.clicked_name, mouse_resp.time,
+    outcome_a1:skew_diff, sanity_check, PROLIFIC_PID
+  ) %>%
   rename(
     choice = mouse_resp.clicked_name,
     rt = mouse_resp.time,
@@ -85,23 +61,37 @@ df %<>%
     rt = str_replace_all(rt, "[^0-9.]", ""),
     rt = as.numeric(rt),
     choice = str_replace(choice, "^[^ab]*([ab]).*", "\\1"),
-    resp = ifelse(choice == "a", 0, 1),
-    condition = ifelse(var_diff < 0, "new", "old")
+    resp = ifelse(choice == "a", 0, 1)
   ) %>% 
   relocate(resp, .after = choice) %>% 
-  relocate(condition, .after = trial) %>% 
+  relocate(lottery_type, .after = trial) %>% 
   filter(sanity_check == FALSE) %>% 
   mutate(
-    condition = as.factor(condition)
+    lottery_type = as.factor(lottery_type)
   )
 
 write_csv(df, "pilot_2_data_prepped_excluded.csv")
 
+rt_summary <- df %>% 
+  group_by(PROLIFIC_PID, lottery_type) %>% 
+  summarise(
+    mean_rt = mean(rt),
+    median_rt = median(rt),
+    min_rt = min(rt),
+    max_rt = max(rt)
+  )
+  
+df %>% 
+  ggplot(aes(x=rt)) +
+  geom_density() +
+  facet_grid(~id) + 
+  scale_x_continuous(limits = c(0, 30))
+
 summary <- df %>% 
-  group_by(id, condition, ev_diff) %>% 
+  group_by(id, lottery_type, ev_diff) %>% 
   summarise(mean_resp = mean(resp)) %>% 
   ungroup() %>% 
-  group_by(condition, ev_diff) %>% 
+  group_by(lottery_type, ev_diff) %>% 
   summarise(
     mean = mean(mean_resp),
     std = sd(mean_resp)
@@ -109,14 +99,14 @@ summary <- df %>%
   mutate(ev_diff = as.factor(ev_diff))
 
 summary %>% 
-  ggplot(aes(x = ev_diff, y = mean, colour = condition)) + 
+  ggplot(aes(x = ev_diff, y = mean, colour = lottery_type)) + 
   geom_pointrange(
     aes(ymin = mean - std, ymax = mean + std),
     position = position_dodge(width = 0.25),
     size = 0.75, linewidth = 1
   ) +
   geom_line(
-    aes(group = condition),
+    aes(group = lottery_type),
     position = position_dodge(width = 0.25),
     linetype = "dashed",
     linewidth = 0.8
@@ -155,19 +145,19 @@ ggsave("../plots/new_approach/pilot_data_plot_excluded.pdf", width = 8, height =
 
 
 summary <- df %>% 
-  mutate(id = dense_rank(id)) %>% 
-  group_by(id, condition, ev_diff) %>% 
+  # mutate(id = dense_rank(id)) %>% 
+  group_by(PROLIFIC_PID, lottery_type, ev_diff) %>% 
   summarise(mean_resp = mean(resp))
 
 
 summary %>% 
-  ggplot(aes(x = ev_diff, y = mean_resp, colour = condition)) + 
+  ggplot(aes(x = ev_diff, y = mean_resp, colour = lottery_type)) + 
   geom_point(
     position = position_dodge(width = 0.25),
     size = 1
   ) +
   geom_line(
-    aes(group = condition),
+    aes(group = lottery_type),
     position = position_dodge(width = 0.25),
     linewidth = 0.8
   ) +
@@ -200,12 +190,12 @@ summary %>%
     axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
     axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
   ) + 
-  facet_wrap(~id)
+  facet_wrap(~PROLIFIC_PID)
 
 ggsave("../plots/new_approach/pilot_data_plot_subjects.pdf", width = 12, height = 10)
 
 
-model_formula <- resp ~ ev_diff * condition + (ev_diff * condition | id)
+model_formula <- resp ~ ev_diff * lottery_type + (ev_diff * lottery_type | id)
 
 model_priors <- prior(normal(0, 1.0), class = b)
 model_fit <- brm(
@@ -220,7 +210,7 @@ model_fit <- brm(
 )
 
 bf <- 1 / hypothesis(model_fit, "conditionold = 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(model_fit, "conditionold > 0")$hypothesis["Evid.Ratio"]
+bf <- hypothesis(model_fit, "conditionold > 0")$hypothesis["Evid.Ratio"]
 bf <- 1 / hypothesis(model_fit, "ev_diff = 0")$hypothesis["Evid.Ratio"]
 bf <- 1 / hypothesis(model_fit, "ev_diff < 0")$hypothesis["Evid.Ratio"]
 bf <- 1 / hypothesis(model_fit, "ev_diff:conditionold = 0")$hypothesis["Evid.Ratio"]

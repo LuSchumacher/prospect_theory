@@ -112,16 +112,17 @@ pt_model <- cmdstan_model(
 fit_pt_model <- pt_model$sample(
   data = stan_data,
   init = init_fun(),
-  max_treedepth = 15,
-  adapt_delta = 0.95,
+  max_treedepth = 5,
+  adapt_delta = 0.85,
   refresh = 50,
-  iter_sampling = 2000,
-  iter_warmup = 2000,
+  iter_sampling = 1000,
+  iter_warmup = 1000,
   chains = 4,
   parallel_chains = 4,
   threads_per_chain = 2,
   save_warmup = TRUE
 )
+
 
 fit_pt_model$summary(variables = PARAM_NAMES)
 mcmc_trace(
