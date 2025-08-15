@@ -10,6 +10,9 @@ COLOR_PALETTE <- c('#27374D', '#B70404')
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
+################################################################################
+# DATA AND MODEL PREPARATION
+################################################################################
 df <- read_csv('../../data/study_data_prepared.csv')
 
 N <- length(unique(df$id))
@@ -24,35 +27,6 @@ stan_data = list(
   choice    = df$resp
 )
 
-# init_fun <- function(chains = 4, N) {
-#   inits <- vector("list", chains)
-#   for (i in 1:chains) {
-#     inits[[i]] <- list(
-#       mu_lambda_0 = 2 + runif(1, -0.5, 0.5),
-#       mu_lambda_1 = 0 + runif(1, -0.2, 0.2),
-#       mu_alpha_0  = 1 + runif(1, -0.5, 0.5),
-#       mu_alpha_1  = 0 + runif(1, -0.2, 0.2),
-#       mu_tau_0    = 2 + runif(1, -0.5, 0.5),
-#       mu_tau_1    = 0 + runif(1, -0.2, 0.2),
-#       
-#       sigma_lambda_0 = runif(1, 0.2, 0.5),
-#       sigma_lambda_1 = runif(1, 0.2, 0.5),
-#       sigma_alpha_0  = runif(1, 0.2, 0.5),
-#       sigma_alpha_1  = runif(1, 0.2, 0.5),
-#       sigma_tau_0    = runif(1, 0.2, 0.5),
-#       sigma_tau_1    = runif(1, 0.2, 0.5),
-#       
-#       lambda_0 = rnorm(N, 2, 0.2),
-#       lambda_1 = rnorm(N, 0, 0.1),
-#       alpha_0  = rnorm(N, 1, 0.1),
-#       alpha_1  = rnorm(N, 0, 0.1),
-#       tau_0    = rnorm(N, 2, 0.2),
-#       tau_1    = rnorm(N, 0, 0.1)
-#     )
-#   }
-#   return(inits)
-# }
-# 
 init_fun <- function(chains = 4) {
   inits <- vector("list", chains)
   for (i in 1:chains) {
@@ -80,28 +54,6 @@ init_fun <- function(chains = 4) {
   return(inits)
 }
 
-
-# init_fun <- function(chains = 4) {
-#   inits <- vector("list", chains)
-#   for (i in 1:chains) {
-#     inits[[i]] <- list(
-#       lambda_0_raw = rnorm(1, log(2), 0.5),
-#       lambda_1_raw = rnorm(1, log(2), 0.5),
-#       alpha_0_raw  = rnorm(1, 1.0, 1.75),
-#       alpha_1_raw  = rnorm(1, 1.0, 1.75),
-#       tau_0_raw    = rnorm(1, 0.5, 0.5),
-#       tau_1_raw    = rnorm(1, 0.5, 0.5)
-#     )
-#   }
-#   return(inits)
-# }
-
-
-# PARAM_NAMES <- c(
-#   "lambda_0", "alpha_0", "tau_0",
-#   "lambda_1", "alpha_1", "tau_1"
-# )
-# 
 PARAM_NAMES <- c(
   "lambda_0_out", "alpha_0_out", "tau_0_out",
   "lambda_1_out", "alpha_1_out", "tau_1_out"
@@ -112,6 +64,9 @@ pt_model <- cmdstan_model(
   cpp_options = list(stan_threads = T)
 )
 
+################################################################################
+# MODEL FITTING
+################################################################################
 fit_pt_model <- pt_model$sample(
   data = stan_data,
   init = init_fun(),
@@ -126,14 +81,17 @@ fit_pt_model <- pt_model$sample(
   save_warmup = TRUE
 )
 
-
 fit_pt_model$summary(variables = PARAM_NAMES)
 mcmc_trace(
   fit_pt_model$draws(inc_warmup = TRUE),
   n_warmup = 1000,
   pars=PARAM_NAMES
 )
+fit_pt_model$save_object("../fits/fit_pt_model.rds")
 
+################################################################################
+# POSTERIOR RE-SIMULATION
+################################################################################
 y_rep <- fit_pt_model$draws("y_rep", format = "matrix")
 y_obs <- df$choice
 
