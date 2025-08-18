@@ -13,7 +13,7 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 ################################################################################
 # DATA AND MODEL PREPARATION
 ################################################################################
-df <- read_csv('../../data/study_data_prepared.csv')
+df <- read_csv('../data/study_data_prepared.csv')
 
 N <- length(unique(df$id))
 `T` <- nrow(df)
@@ -60,7 +60,7 @@ PARAM_NAMES <- c(
 )
 
 pt_model <- cmdstan_model(
-  'pt_single_new.stan',
+  'pt_model_separate_params.stan',
   cpp_options = list(stan_threads = T)
 )
 
@@ -87,7 +87,7 @@ mcmc_trace(
   n_warmup = 1000,
   pars=PARAM_NAMES
 )
-fit_pt_model$save_object("../fits/fit_pt_model.rds")
+fit_pt_model$save_object("../fits/fit_pt_model_separate_params.stan.rds")
 
 ################################################################################
 # POSTERIOR RE-SIMULATION

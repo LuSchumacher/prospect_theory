@@ -11,14 +11,25 @@ COLOR_PALETTE <- c('#27374D', '#B70404')
 
 path <- "../data/study_data/"
 files <- list.files(path, pattern = ".csv")
+old_files <- files[
+  files != "25049_lotterie_task_2025-08-14_11h46.19.558.csv" &
+    files != "684578_lotterie_task_2025-08-14_11h41.58.243.csv" &
+    files != "805772_lotterie_task_2025-08-14_12h48.46.280.csv"
+]
+new_files <- files[
+  files == "25049_lotterie_task_2025-08-14_11h46.19.558.csv" |
+    files == "684578_lotterie_task_2025-08-14_11h41.58.243.csv" |
+    files == "805772_lotterie_task_2025-08-14_12h48.46.280.csv"
+]
 
-df <- read_csv(paste0(path, files))
+df_old <- read_csv(paste0(path, old_files))
+df_new <- read_csv(paste0(path, new_files))
 
 payment_df <- df %>% 
   select(PROLIFIC_PID, bonus_payment) %>% 
   drop_na(bonus_payment)
 
-attention_check <- df %>%
+attention_check <- df_old %>%
   select(
     PROLIFIC_PID,
     text_response_box.text
@@ -27,14 +38,14 @@ attention_check <- df %>%
     !is.na(text_response_box.text)
   )
 
-sanity_check <- df %>%
+sanity_check <- df_old %>%
   filter(sanity_check == TRUE) %>%
   select(
     PROLIFIC_PID,
     mouse_resp.clicked_name
   )
 
-df %<>%
+df_old %<>%
   filter(
     PROLIFIC_PID != "60a033197af9369e76946104",
     PROLIFIC_PID != "615e233e180ad299aaea710c",
@@ -44,18 +55,16 @@ df %<>%
     PROLIFIC_PID != "5e70bd5480f43a0009625d4c",
     PROLIFIC_PID != "6724b9788642a492d3a55188",
   ) %>%
-  mutate(id = dense_rank(PROLIFIC_PID)) %>%
   select(
-    id, age, sex, trials.thisN, lottery_type,
+    PROLIFIC_PID, age, sex, trials.thisN, lottery_type,
     mouse_resp.clicked_name, mouse_resp.time,
-    outcome_a1:skew_diff, sanity_check, PROLIFIC_PID
+    outcome_a1:skew_diff, sanity_check
   ) %>%
   rename(
     choice = mouse_resp.clicked_name,
     rt = mouse_resp.time,
     trial = trials.thisN
   ) %>% 
-  arrange(id) %>% 
   drop_na(choice) %>% 
   mutate(
     rt = str_replace_all(rt, "[^0-9.]", ""),
@@ -65,11 +74,40 @@ df %<>%
   ) %>% 
   relocate(resp, .after = choice) %>% 
   relocate(lottery_type, .after = trial) %>% 
-  relocate(PROLIFIC_PID, .after = id) %>% 
   filter(sanity_check == FALSE) %>% 
   mutate(
     lottery_type = as.factor(lottery_type)
   )
+
+df_new %<>%
+  select(
+    PROLIFIC_PID, age, sex, trials.thisN, lottery_type,
+    mouse_resp.clicked_name, mouse_resp.time,
+    outcome_a1:skew_diff, sanity_check
+  ) %>%
+  rename(
+    choice = mouse_resp.clicked_name,
+    rt = mouse_resp.time,
+    trial = trials.thisN
+  ) %>% 
+  drop_na(choice) %>% 
+  mutate(
+    rt = str_replace_all(rt, "[^0-9.]", ""),
+    rt = as.numeric(rt),
+    choice = str_replace(choice, "^[^ab]*([ab]).*", "\\1"),
+    resp = ifelse(choice == "a", 0, 1)
+  ) %>% 
+  relocate(resp, .after = choice) %>% 
+  relocate(lottery_type, .after = trial) %>% 
+  filter(sanity_check == FALSE) %>% 
+  mutate(
+    lottery_type = as.factor(lottery_type)
+  )
+
+df <- bind_rows(df_old, df_new) %>% 
+  mutate(id = dense_rank(PROLIFIC_PID)) %>% 
+  relocate(id) %>% 
+  arrange(id)
 
 write_csv(df, "../data/study_data_prepared.csv")
 
@@ -133,7 +171,10 @@ summary %>%
     legend.spacing.y = unit(0.25, 'cm'),
     axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
     axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
-  ) 
+  )
+
+ggsave("../plots/empirical_data.pdf", width = 12, height = 10)
+
 
 summary <- df %>% 
   group_by(PROLIFIC_PID, lottery_type, ev_diff) %>% 
