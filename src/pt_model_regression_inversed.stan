@@ -89,13 +89,23 @@ model {
   z_tau            ~ std_normal();
 
   for (t in 1:T) {
-    real utility_a = get_pt_utility(
+    real utility_a_raw = get_pt_utility(
       to_vector(outcome_a[t]),
       alpha[gamble_type[t], subject_id[t]],
       lambda[gamble_type[t], subject_id[t]]
     );
-    real utility_b = get_pt_utility(
+    real utility_b_raw = get_pt_utility(
       to_vector(outcome_b[t]),
+      alpha[gamble_type[t], subject_id[t]],
+      lambda[gamble_type[t], subject_id[t]]
+    );
+    real utility_a = inverse_utility(
+      utility_a_raw, 
+      alpha[gamble_type[t], subject_id[t]],
+      lambda[gamble_type[t], subject_id[t]]
+    );
+    real utility_b = inverse_utility(
+      utility_b_raw, 
       alpha[gamble_type[t], subject_id[t]],
       lambda[gamble_type[t], subject_id[t]]
     );
@@ -113,13 +123,23 @@ generated quantities {
   array[T] int y_rep;
 
   for (t in 1:T) {
-    real utility_a = get_pt_utility(
+    real utility_a_raw = get_pt_utility(
       to_vector(outcome_a[t]),
       alpha[gamble_type[t], subject_id[t]],
       lambda[gamble_type[t], subject_id[t]]
     );
-    real utility_b = get_pt_utility(
+    real utility_b_raw = get_pt_utility(
       to_vector(outcome_b[t]),
+      alpha[gamble_type[t], subject_id[t]],
+      lambda[gamble_type[t], subject_id[t]]
+    );
+    real utility_a = inverse_utility(
+      utility_a_raw, 
+      alpha[gamble_type[t], subject_id[t]],
+      lambda[gamble_type[t], subject_id[t]]
+    );
+    real utility_b = inverse_utility(
+      utility_b_raw, 
       alpha[gamble_type[t], subject_id[t]],
       lambda[gamble_type[t], subject_id[t]]
     );

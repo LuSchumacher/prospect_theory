@@ -95,8 +95,10 @@ model {
     real lambda = gamble_type[t] == 0 ? lambda_0[subject_id[t]] : lambda_1[subject_id[t]];
     real alpha  = gamble_type[t] == 0 ? alpha_0[subject_id[t]]  : alpha_1[subject_id[t]];
     real tau    = gamble_type[t] == 0 ? tau_0[subject_id[t]]    : tau_1[subject_id[t]];
-    real utility_a = get_pt_utility(to_vector(outcome_a[t]), alpha, lambda);
-    real utility_b = get_pt_utility(to_vector(outcome_b[t]), alpha, lambda);
+    real utility_a_raw = get_pt_utility(to_vector(outcome_a[t]), alpha, lambda);
+    real utility_b_raw = get_pt_utility(to_vector(outcome_b[t]), alpha, lambda);
+    real utility_a = inverse_utility(utility_a_raw, alpha, lambda);
+    real utility_b = inverse_utility(utility_b_raw, alpha, lambda);
     real logit_p = tau * (utility_b - utility_a);
     choice[t] ~ bernoulli_logit(logit_p);
   }
@@ -117,12 +119,12 @@ generated quantities {
     real lambda = gamble_type[t] == 0 ? lambda_0[subject_id[t]] : lambda_1[subject_id[t]];
     real alpha  = gamble_type[t] == 0 ? alpha_0[subject_id[t]]  : alpha_1[subject_id[t]];
     real tau    = gamble_type[t] == 0 ? tau_0[subject_id[t]]    : tau_1[subject_id[t]];
-
-    real utility_a = get_pt_utility(to_vector(outcome_a[t]), alpha, lambda);
-    real utility_b = get_pt_utility(to_vector(outcome_b[t]), alpha, lambda);
+    real utility_a_raw = get_pt_utility(to_vector(outcome_a[t]), alpha, lambda);
+    real utility_b_raw = get_pt_utility(to_vector(outcome_b[t]), alpha, lambda);
+    real utility_a = inverse_utility(utility_a_raw, alpha, lambda);
+    real utility_b = inverse_utility(utility_b_raw, alpha, lambda);
     real logit_p = tau * (utility_b - utility_a);
     log_lik[t] = bernoulli_logit_lpmf(choice[t] | logit_p);
     y_rep[t] = bernoulli_logit_rng(logit_p);
   }
 }
-

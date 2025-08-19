@@ -9,61 +9,69 @@ FONT_SIZE_2 <- 20
 FONT_SIZE_3 <- 18
 COLOR_PALETTE <- c('#27374D', '#B70404')
 
+IDS_TO_EXCLUDE = c(
+  "60a033197af9369e76946104", "615e233e180ad299aaea710c", 
+  "6666fb1567243aa56ed8cffa", "5fe7bc4ec39215684de426f4",
+  "676aa6bfdda58087a94af1ea", "5e70bd5480f43a0009625d4c",
+  "6724b9788642a492d3a55188"
+)
+SANITY_CHECK_THRESHOLD <- 3
+
+################################################################################
+# DATA PREPARATION
+################################################################################
+
 path <- "../data/study_data/"
 files <- list.files(path, pattern = ".csv")
-old_files <- files[
-  files != "25049_lotterie_task_2025-08-14_11h46.19.558.csv" &
-    files != "684578_lotterie_task_2025-08-14_11h41.58.243.csv" &
-    files != "805772_lotterie_task_2025-08-14_12h48.46.280.csv"
-]
-new_files <- files[
-  files == "25049_lotterie_task_2025-08-14_11h46.19.558.csv" |
-    files == "684578_lotterie_task_2025-08-14_11h41.58.243.csv" |
-    files == "805772_lotterie_task_2025-08-14_12h48.46.280.csv"
-]
 
-df_old <- read_csv(paste0(path, old_files))
-df_new <- read_csv(paste0(path, new_files))
-
-payment_df <- df %>% 
-  select(PROLIFIC_PID, bonus_payment) %>% 
-  drop_na(bonus_payment)
-
-attention_check <- df_old %>%
-  select(
-    PROLIFIC_PID,
-    text_response_box.text
-  ) %>%
-  filter(
-    !is.na(text_response_box.text)
+df <- tibble()
+df_bonus_payment <- tibble()
+sanity_fail_counter <- 0
+for (i in seq_along(files)) {
+  if (files[i] %in% IDS_TO_EXCLUDE) {
+    next
+  }
+  tmp <- read_csv(paste0(path, files[i]))
+  
+  # record bonus payment
+  bonus <- na.omit(tmp$bonus_payment)
+  bonus <- bonus[1]
+  tmp_bonus <-tibble(
+    id = unique(tmp$PROLIFIC_PID),
+    bonus_payment = bonus
   )
+  df_bonus_payment <- bind_rows(df_bonus_payment, tmp_bonus)
+  
+  # check if sanity check is passed
+  sanity_check <- tmp %>%
+    filter(sanity_check == TRUE) %>%
+    select(
+      mouse_resp.clicked_name
+    ) %>% 
+    mutate(correct = ifelse(
+      mouse_resp.clicked_name == '["coins_b_3","coins_b_3"]', 1, 0
+    ))
+  if (sum(sanity_check$correct) < SANITY_CHECK_THRESHOLD) {
+    sanity_fail_counter <- sanity_fail_counter + 1
+    next
+  }
+  
+  # data merge
+  tmp %<>%
+    select(
+      PROLIFIC_PID, age, sex, trials.thisN, lottery_type,
+      mouse_resp.clicked_name, mouse_resp.time,
+      outcome_a1:skew_diff, sanity_check
+    )
+  df <- bind_rows(df, tmp)
+}
 
-sanity_check <- df_old %>%
-  filter(sanity_check == TRUE) %>%
-  select(
-    PROLIFIC_PID,
-    mouse_resp.clicked_name
-  )
-
-df_old %<>%
-  filter(
-    PROLIFIC_PID != "60a033197af9369e76946104",
-    PROLIFIC_PID != "615e233e180ad299aaea710c",
-    PROLIFIC_PID != "6666fb1567243aa56ed8cffa",
-    PROLIFIC_PID != "5fe7bc4ec39215684de426f4",
-    PROLIFIC_PID != "676aa6bfdda58087a94af1ea",
-    PROLIFIC_PID != "5e70bd5480f43a0009625d4c",
-    PROLIFIC_PID != "6724b9788642a492d3a55188",
-  ) %>%
-  select(
-    PROLIFIC_PID, age, sex, trials.thisN, lottery_type,
-    mouse_resp.clicked_name, mouse_resp.time,
-    outcome_a1:skew_diff, sanity_check
-  ) %>%
+df %<>%
   rename(
     choice = mouse_resp.clicked_name,
     rt = mouse_resp.time,
-    trial = trials.thisN
+    trial = trials.thisN,
+    gamble_type = lottery_type
   ) %>% 
   drop_na(choice) %>% 
   mutate(
@@ -73,46 +81,24 @@ df_old %<>%
     resp = ifelse(choice == "a", 0, 1)
   ) %>% 
   relocate(resp, .after = choice) %>% 
-  relocate(lottery_type, .after = trial) %>% 
+  relocate(gamble_type, .after = trial) %>% 
   filter(sanity_check == FALSE) %>% 
   mutate(
-    lottery_type = as.factor(lottery_type)
-  )
-
-df_new %<>%
-  select(
-    PROLIFIC_PID, age, sex, trials.thisN, lottery_type,
-    mouse_resp.clicked_name, mouse_resp.time,
-    outcome_a1:skew_diff, sanity_check
-  ) %>%
-  rename(
-    choice = mouse_resp.clicked_name,
-    rt = mouse_resp.time,
-    trial = trials.thisN
+    gamble_type = as.factor(gamble_type),
+    id = dense_rank(PROLIFIC_PID)
   ) %>% 
-  drop_na(choice) %>% 
-  mutate(
-    rt = str_replace_all(rt, "[^0-9.]", ""),
-    rt = as.numeric(rt),
-    choice = str_replace(choice, "^[^ab]*([ab]).*", "\\1"),
-    resp = ifelse(choice == "a", 0, 1)
-  ) %>% 
-  relocate(resp, .after = choice) %>% 
-  relocate(lottery_type, .after = trial) %>% 
-  filter(sanity_check == FALSE) %>% 
-  mutate(
-    lottery_type = as.factor(lottery_type)
-  )
-
-df <- bind_rows(df_old, df_new) %>% 
-  mutate(id = dense_rank(PROLIFIC_PID)) %>% 
+  select(-c(sanity_check, PROLIFIC_PID)) %>% 
   relocate(id) %>% 
   arrange(id)
 
 write_csv(df, "../data/study_data_prepared.csv")
 
+################################################################################
+# RT SUMMARY STATISTICS
+################################################################################
+
 rt_summary <- df %>% 
-  group_by(PROLIFIC_PID, lottery_type) %>% 
+  group_by(id, gamble_type) %>% 
   summarise(
     mean_rt = mean(rt),
     median_rt = median(rt),
@@ -120,11 +106,15 @@ rt_summary <- df %>%
     max_rt = max(rt)
   )
 
+################################################################################
+# PLOT: CHOICE PROPORTION AND EV DIFFERENCE
+################################################################################
+
 summary <- df %>% 
-  group_by(id, lottery_type, ev_diff) %>% 
+  group_by(id, gamble_type, ev_diff) %>% 
   summarise(mean_resp = mean(resp)) %>% 
   ungroup() %>% 
-  group_by(lottery_type, ev_diff) %>% 
+  group_by(gamble_type, ev_diff) %>% 
   summarise(
     mean = mean(mean_resp),
     std = sd(mean_resp)
@@ -132,14 +122,14 @@ summary <- df %>%
   mutate(ev_diff = as.factor(ev_diff))
 
 summary %>% 
-  ggplot(aes(x = ev_diff, y = mean, colour = lottery_type)) + 
+  ggplot(aes(x = ev_diff, y = mean, colour = gamble_type)) + 
   geom_pointrange(
     aes(ymin = mean - std, ymax = mean + std),
     position = position_dodge(width = 0.25),
     size = 0.75, linewidth = 1
   ) +
   geom_line(
-    aes(group = lottery_type),
+    aes(group = gamble_type),
     position = position_dodge(width = 0.25),
     linetype = "dashed",
     linewidth = 0.8
@@ -175,19 +165,22 @@ summary %>%
 
 ggsave("../plots/empirical_data.pdf", width = 12, height = 10)
 
+################################################################################
+# PLOT: CHOICE PROPORTION AND EV DIFFERENCE PER INDIVIDUAL
+################################################################################
 
 summary <- df %>% 
-  group_by(PROLIFIC_PID, lottery_type, ev_diff) %>% 
+  group_by(id, gamble_type, ev_diff) %>% 
   summarise(mean_resp = mean(resp))
 
 summary %>% 
-  ggplot(aes(x = ev_diff, y = mean_resp, colour = lottery_type)) + 
+  ggplot(aes(x = ev_diff, y = mean_resp, colour = gamble_type)) + 
   geom_point(
     position = position_dodge(width = 0.25),
     size = 1
   ) +
   geom_line(
-    aes(group = lottery_type),
+    aes(group = gamble_type),
     position = position_dodge(width = 0.25),
     linewidth = 0.8
   ) +
@@ -220,34 +213,6 @@ summary %>%
     axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
     axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
   ) + 
-  facet_wrap(~PROLIFIC_PID)
+  facet_wrap(~id)
 
-ggsave("../plots/new_approach/pilot_data_plot_subjects.pdf", width = 12, height = 10)
-
-model_formula <- resp ~ ev_diff * lottery_type + (ev_diff * lottery_type | id)
-
-model_priors <- prior(normal(0, 1.0), class = b)
-model_fit <- brm(
-  formula = model_formula,
-  data = df,
-  family = bernoulli("logit"),
-  prior = model_priors,
-  iter = 4000,
-  cores = 4,
-  chains = 4,
-  sample_prior = "yes"
-)
-
-conditional_effects(model_fit)
-
-bf <- 1 / hypothesis(model_fit, "lottery_typeunconfounded = 0")$hypothesis["Evid.Ratio"]
-bf <- hypothesis(model_fit, "lottery_typeunconfounded < 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(model_fit, "ev_diff = 0")$hypothesis["Evid.Ratio"]
-bf <- hypothesis(model_fit, "ev_diff < 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(model_fit, "ev_diff:lottery_typeunconfounded = 0")$hypothesis["Evid.Ratio"]
-
-plot(hypothesis(model_fit, "lottery_typeunconfounded < 0"))
-plot(hypothesis(model_fit, "ev_diff < 0"))
-plot(hypothesis(model_fit, "ev_diff:lottery_typeunconfounded = 0"))
-
-pp_check(model_fit, ndraws=50)
+ggsave("../plots/empirical_data_subjects.pdf", width = 12, height = 10)
