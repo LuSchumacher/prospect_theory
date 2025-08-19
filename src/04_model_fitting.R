@@ -184,7 +184,6 @@ fit_pt_model_regression <- pt_model_regression$sample(
   save_warmup = TRUE
 )
 
-fit_pt_model_regression$summary(variables = param_names_regression)
 # mcmc_trace(
 #   fit_pt_model_regression$draws(inc_warmup = TRUE),
 #   n_warmup = 1000,
