@@ -1,4 +1,7 @@
 __pycache__/
 *.DS_Store
 *.ipynb_checkpoints
+*.Rhistory
+study_data/
+00_data_preparation.R
 fits/
