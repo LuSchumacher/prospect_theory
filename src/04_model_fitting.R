@@ -20,13 +20,13 @@ df <- read_csv('../data/study_data_prepared.csv')
 N <- length(unique(df$id))
 `T` <- nrow(df)
 stan_data = list(
-  `T`        = `T`,
-  N          = N,
-  subject_id = df$id,
-  gamble_type  = ifelse(df$gamble_type == "confounded", 0, 1),
-  outcome_a  = as.matrix(df[, c("outcome_a1", "outcome_a2", "outcome_a3")]),
-  outcome_b  = as.matrix(df[, c("outcome_b1", "outcome_b2", "outcome_b3")]),
-  choice    = df$resp
+  `T`         = `T`,
+  N           = N,
+  subject_id  = df$id,
+  gamble_type = ifelse(df$gamble_type == "confounded", 0, 1),
+  outcome_a   = as.matrix(df[, c("outcome_a1", "outcome_a2", "outcome_a3")]),
+  outcome_b   = as.matrix(df[, c("outcome_b1", "outcome_b2", "outcome_b3")]),
+  choice      = df$resp
 )
 
 init_fun <- function(chains = 4) {
@@ -173,11 +173,11 @@ pt_model_regression_inversed <- cmdstan_model(
 fit_pt_model_regression <- pt_model_regression$sample(
   data = stan_data,
   init = init_fun(),
-  max_treedepth = 5,
-  adapt_delta = 0.85,
+  max_treedepth = 10,
+  adapt_delta = 0.9,
   refresh = 50,
-  iter_sampling = 1500,
-  iter_warmup = 1500,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
   chains = 4,
   parallel_chains = 4,
   threads_per_chain = 2,
@@ -233,17 +233,6 @@ loo_regression_inv <- loo(log_lik_regression_inv)
 
 loo_compare(loo_separate, loo_separate_inv, loo_regression, loo_regression_inv)
 
-
-
-
-
-
-
-
-
-
-
-
 compute_bf <- function(draws, prior_mean = 0, prior_sd = 0.5) {
   prior_dens_0 <- dnorm(0, mean = prior_mean, sd = prior_sd)
   
@@ -261,7 +250,6 @@ compute_bf <- function(draws, prior_mean = 0, prior_sd = 0.5) {
   )
 }
 
-
 compute_bf_logspline <- function(draws, prior_mean = 0, prior_sd = 0.5) {
   prior_dens_0 <- dnorm(0, mean = prior_mean, sd = prior_sd)
   
@@ -278,7 +266,6 @@ compute_bf_logspline <- function(draws, prior_mean = 0, prior_sd = 0.5) {
     BF10 = BF10
   )
 }
-
 
 # corrected Savage–Dickey using KDE
 compute_bf_sd <- function(draws, prior_mean = 0, prior_sd = 0.5, kde_n = 2^14) {
@@ -304,8 +291,10 @@ compute_bf_sd <- function(draws, prior_mean = 0, prior_sd = 0.5, kde_n = 2^14) {
   )
 }
 
+fit_pt_model_regression <- readRDS("../fits/fit_pt_model_regression.rds")
+
 # assuming your fit object is called "fit"
-draws <- as_draws_df(fit_pt_model)
+draws <- as_draws_df(fit_pt_model_regression)
 
 res_lambda <- compute_bf_sd(draws$beta_lambda, prior_sd = 0.5)
 res_alpha  <- compute_bf_sd(draws$beta_alpha,  prior_sd = 0.5)
@@ -324,8 +313,6 @@ bf_table <- tibble(
 
 COLOR_PALETTE <- c(confounded = '#27374D', unconfounded = '#B70404')
 
-draws <- as_draws_df(fit_pt_model)
-
 PARAM_NAMES <- c(
   "lambda_out[1]", "lambda_out[2]", "beta_lambda",
   "alpha_out[1]",  "alpha_out[2]",  "beta_alpha",
@@ -338,82 +325,96 @@ draws_tidy <- draws %>%
   pivot_longer(everything(), names_to = "parameter", values_to = "value") %>%
   mutate(
     family = case_when(
-      grepl("lambda", parameter) ~ "λ",
-      grepl("alpha", parameter)  ~ "α",
-      grepl("tau", parameter)    ~ "τ"
+      grepl("lambda", parameter) ~ "lambda",
+      grepl("alpha", parameter)  ~ "alpha",
+      grepl("tau", parameter)    ~ "tau"
     ),
     panel = case_when(
       grepl("out", parameter)  ~ "PT model parameters",
-      grepl("beta", parameter) ~ "β (effect of gamble type)"
+      grepl("beta", parameter) ~ "Effect of gamble type"
     ),
     gamble_type = case_when(
       parameter %in% c("lambda_out[1]","alpha_out[1]","tau_out[1]") ~ "confounded",
       parameter %in% c("lambda_out[2]","alpha_out[2]","tau_out[2]") ~ "unconfounded",
       TRUE ~ NA_character_
-    )
+    ),
+    # force desired column order: params in col 1, betas in col 2
+    panel = factor(panel, levels = c("PT model parameters", "Effect of gamble type"))
   )
 
-# prior for betas
-prior_fun <- function(x) dnorm(x, mean = 0, sd = 0.5)
-x_grid <- seq(-2, 2, length.out = 500)
-prior_df <- expand.grid(
-  x = x_grid,
-  family = c("λ", "α", "τ")
-) %>%
-  mutate(density = prior_fun(x), panel = "β (effect of gamble type)")
-
 # plotting
-ggplot() +
-  # outs (PT params)
+FONT_SCALER <- 0
+pt_model_params <- ggplot() +
   geom_density(
     data = draws_tidy %>% filter(panel == "PT model parameters"),
     aes(x = value, fill = gamble_type),
-    alpha = 0.5, color = NA
+    alpha = 0.75, color = NA
   ) +
   scale_fill_manual(values = COLOR_PALETTE, name = "Gamble type") +
-  
-  # betas
   geom_density(
-    data = draws_tidy %>% filter(panel == "β (effect of gamble type)"),
+    data = draws_tidy %>% filter(panel == "Effect of gamble type"),
     aes(x = value),
-    fill = "skyblue", alpha = 0.5, color = NA
+    fill = "darkgray", alpha = 0.75, color = NA
   ) +
-  geom_line(
-    data = prior_df,
-    aes(x = x, y = density),
-    color = "red", linewidth = 1
+  facet_grid(
+    family ~ panel,
+    scales = "free",
+    labeller = labeller(
+      family = label_parsed,   # Greek letters
+      panel  = label_value     # plain text
+    )
   ) +
-  
-  facet_grid(family ~ panel, scales = "free") +
   geom_vline(
-    data = draws_tidy %>% filter(panel == "β (effect of gamble type)"),
+    data = draws_tidy %>% filter(panel == "Effect of gamble type"),
     aes(xintercept = 0),
     linetype = "dashed", inherit.aes = FALSE
   ) +
-  theme_minimal(base_size = 14) +
-  labs(
-    x = "Value", y = "Density",
-    title = "Posterior distributions of PT parameters"
+  labs(x = "Value", y = "Density") +
+  ggthemes::theme_tufte(base_size = FONT_SIZE_2) +
+  theme(
+    axis.title.x = element_text(margin = margin(t = 12)),
+    axis.title.y = element_text(margin = margin(r = 12)),
+    axis.line = element_line(linewidth = 0.5, color = "#969696"),
+    axis.ticks = element_line(color = "#969696"),
+    axis.text.x = element_text(size = FONT_SIZE_3 - FONT_SCALER, vjust = 0.5),
+    axis.text.y = element_text(size = FONT_SIZE_3 - FONT_SCALER),
+    strip.text.x = element_text(size = FONT_SIZE_2 - FONT_SCALER),
+    strip.text.y = element_text(size = FONT_SIZE_2 - FONT_SCALER, hjust = 0, angle = 0),
+    panel.grid.major = element_line(color = scales::alpha("gray70", 0.3)),
+    panel.grid.minor = element_line(color = scales::alpha("gray70", 0.15)),
+    panel.background = element_blank(),
+    panel.spacing = unit(1.2, "lines"),
+    legend.position = "bottom",
+    legend.margin = margin(t = -5, r = 0, b = 0, l = 0),
+    legend.spacing.y = unit(0.2, "cm"),
   )
+
+ggsave(
+  '../plots/pt_model_params.pdf',
+  pt_model_params,
+  device = 'pdf', dpi = 300,
+  width = 10, height = 6
+)
+
 
 
 ################################################################################
 # POSTERIOR RE-SIMULATION
 ################################################################################
-y_rep <- fit_pt_model$draws("y_rep", format = "matrix")
+y_rep <- fit_pt_model_regression$draws("y_rep", format = "matrix")
 y_obs <- df$choice
 
 NUM_PP_DRAWS <- 500
-idx <- sample(1:4000, NUM_PP_DRAWS)
+idx <- sample(1:8000, NUM_PP_DRAWS)
 
 pred_data <- y_rep %>% 
   as_tibble() %>% 
-  mutate(draw = 1:4000) %>% 
+  mutate(draw = 1:8000) %>% 
   filter(draw %in% idx) %>% 
   pivot_longer(-draw, names_to = "trial", values_to = "resp") %>% 
   mutate(
     trial = str_extract(trial, "(?<=\\[)\\d+(?=\\])"),
-    lottery_type = rep(df$lottery_type, times=NUM_PP_DRAWS),
+    lottery_type = rep(df$gamble_type, times=NUM_PP_DRAWS),
     ev_diff = rep(df$ev_diff, times=NUM_PP_DRAWS)
   )
 
@@ -429,23 +430,24 @@ pred_summary <- pred_data %>%
     lower = quantile(resp_mean, 0.025),     # 95% CI across draws
     upper = quantile(resp_mean, 0.975),
     .groups = "drop"
-  )
+  ) %>% 
+  mutate(gamble_type = lottery_type)
 
 emp_summary <- df %>% 
-  group_by(lottery_type, ev_diff) %>% 
+  group_by(gamble_type, ev_diff) %>% 
   summarise(mean_resp = mean(resp), .groups = "drop")
 
 ggplot(pred_summary, aes(
   x = ev_diff, y = mean_resp,
-  color = lottery_type,
-  fill = lottery_type
+  color = gamble_type,
+  fill = gamble_type
   )) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
   geom_line(
     data = emp_summary,
     aes(
-      group = lottery_type,
-      color = lottery_type
+      group = gamble_type,
+      color = gamble_type
     ),
     linetype = "dashed",
     linewidth = 1
@@ -453,7 +455,7 @@ ggplot(pred_summary, aes(
   geom_hline(yintercept = 0.5, linetype = "dashed") +
   geom_point(
     data = emp_summary,
-    aes(color = lottery_type),
+    aes(color = gamble_type),
     size = 2.5
   ) +
   scale_fill_manual(values = COLOR_PALETTE, guide = "none") +
@@ -462,7 +464,7 @@ ggplot(pred_summary, aes(
   scale_y_continuous(limits = c(-0.1, 1.1), breaks = seq(0, 1, 0.2)) +
   labs(
     x = "Difference in EV",
-    y = "P(choose risky)",
+    y = "P(choose lower losses option)",
     color = "Gamble type"
   ) +
   ggthemes::theme_tufte() + 
@@ -486,4 +488,8 @@ ggplot(pred_summary, aes(
     axis.title.x = element_text(margin = margin(t = 15, r = 0, b = 5, l = 0))
   )
 
-
+ggsave(
+  '../plots/pt_model_pp_check.pdf',
+  device = 'pdf', dpi = 300,
+  width = 10, height = 6
+)

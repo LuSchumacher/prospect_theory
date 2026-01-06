@@ -19,7 +19,7 @@ model_priors <- prior(normal(0, 1.0), class = b)
 glm_fit <- brm(
   formula = model_formula,
   data = df,
-  family = bernoulli("logit"),
+  family =
   prior = model_priors,
   iter = 4000,
   cores = 4,
@@ -29,7 +29,6 @@ glm_fit <- brm(
 )
 
 conditional_effects(glm_fit)
-
 bf <- 1 / hypothesis(glm_fit, "gamble_typeunconfounded = 0")$hypothesis["Evid.Ratio"]
 bf <- hypothesis(glm_fit, "gamble_typeunconfounded < 0")$hypothesis["Evid.Ratio"]
 bf <- 1 / hypothesis(glm_fit, "ev_diff = 0")$hypothesis["Evid.Ratio"]
