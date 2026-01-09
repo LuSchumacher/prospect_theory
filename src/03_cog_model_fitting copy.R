@@ -23,93 +23,76 @@ stan_data = list(
   `T`         = `T`,
   N           = N,
   subject_id  = df$id,
-  gamble_type = ifelse(df$gamble_type == "confounded", 1, 2),
-  outcomes_a   = as.matrix(df[, c("outcome_a1", "outcome_a2", "outcome_a3")]),
-  outcomes_b   = as.matrix(df[, c("outcome_b1", "outcome_b2", "outcome_b3")]),
+  gamble_type = ifelse(df$gamble_type == "confounded", 0, 1),
+  outcome_a   = as.matrix(df[, c("outcome_a1", "outcome_a2", "outcome_a3")]),
+  outcome_b   = as.matrix(df[, c("outcome_b1", "outcome_b2", "outcome_b3")]),
   choice      = df$resp
 )
 
-init_fun <- function(chains = 4, n=N) {
+init_fun <- function(chains = 4) {
   inits <- vector("list", chains)
   for (i in 1:chains) {
     inits[[i]] <- list(
-      intercept_lambda = rnorm(1, log(2), 0.5),
-      intercept_alpha  = rnorm(1, 1.0, 1.75),
-      intercept_tau    = rnorm(1, 0.5, 0.5),
-      b_lambda         = rnorm(1, 0.0, 0.5),
-      b_alpha          = rnorm(1, 0.0, 0.5),
-      b_tau            = rnorm(1, 0.0, 0.5),
-      sigma_lambda     = rnorm(1, 0, 0.5),
-      sigma_alpha      = rnorm(1, 0, 0.5),
-      sigma_tau        = rnorm(1, 0, 0.5),
-      z_lambda         = rnorm(n, 0, 1),
-      z_alpha          = rnorm(n, 0, 1),
-      z_tau            = rnorm(n, 0, 1)
+      mu_lambda_0    = rnorm(1, log(2), 0.5),
+      mu_lambda_1    = rnorm(1, log(2), 0.5),
+      mu_alpha_0     = rnorm(1, 1.0, 1.75),
+      mu_alpha_1     = rnorm(1, 1.0, 1.75),
+      mu_tau_0       = rnorm(1, 0.5, 0.5),
+      mu_tau_1       = rnorm(1, 0.5, 0.5),
+      sigma_lambda_0 = rnorm(1, 0, 2),
+      sigma_lambda_1 = rnorm(1, 0, 2),
+      sigma_alpha_0  = rnorm(1, 0, 2),
+      sigma_alpha_1  = rnorm(1, 0, 2),
+      sigma_tau_0    = rnorm(1, 0, 2),
+      sigma_tau_1    = rnorm(1, 0, 2),
+      z_lambda_0     = rnorm(N, 0, 1),
+      z_lambda_1     = rnorm(N, 0, 1),
+      z_alpha_0      = rnorm(N, 0, 1),
+      z_alpha_1      = rnorm(N, 0, 1),
+      z_tau_0        = rnorm(N, 0, 1),
+      z_tau_1        = rnorm(N, 0, 1)
     )
   }
   return(inits)
 }
 
-M1_PARAM_NAMES <- c(
-  "lambda_out[1]", "lambda_out[2]", "b_lambda",
-  "alpha_out[1]", "alpha_out[2]", "b_alpha",
-  "tau_out[1]", "tau_out[2]", "b_tau"
-)
-# M2_PARAM_NAMES <- c(
-#   "lambda_0_out", "lambda_1_out", "b_lambda",
-#   "alpha_0_out", "alpha_1_out", "b_alpha",
-#   "gamma_0_out", "gamma_1_out", "b_gamma",
-#   "tau_0_out", "tau_1_out", "b_tau"
-# )
-# M3_PARAM_NAMES <- c(
-#   "lambda_0_out", "lambda_1_out", "alpha_0_out",
-#   "alpha_1_out", "tau_0_out", "tau_1_out"
-# )
-
-model_1 <- cmdstan_model(
-  '../stan_models/model_1.stan',
-  cpp_options = list(stan_threads = TRUE),
-  force_recompile = TRUE
+param_names_separate <- c(
+  "lambda_0_out", "lambda_1_out", "alpha_0_out",
+  "alpha_1_out", "tau_0_out", "tau_1_out"
 )
 
-# model_2 <- cmdstan_model(
-#   'model_2.stan',
-#   cpp_options = list(stan_threads = T)
-# )
-# model_3 <- cmdstan_model(
-#   'model_3.stan',
-#   cpp_options = list(stan_threads = T)
-# )
+pt_model_separate_params <- cmdstan_model(
+  'pt_model_separate_params.stan',
+  cpp_options = list(stan_threads = T)
+)
+pt_model_separate_params_inversed <- cmdstan_model(
+  'pt_model_separate_params_inversed.stan',
+  cpp_options = list(stan_threads = T)
+)
 
-# ---------------------------------------------------------------------------- #
+################################################################################
 # MODEL FITTING
-# ---------------------------------------------------------------------------- #
-fit_model_1 <- model_1$sample(
+################################################################################
+fit_pt_model_separate_params <- pt_model_separate_params$sample(
   data = stan_data,
   init = init_fun(),
-  max_treedepth = 10,
+  max_treedepth = 5,
   adapt_delta = 0.85,
-  refresh = 100,
-  iter_sampling = 2000,
-  iter_warmup = 2000,
+  refresh = 50,
+  iter_sampling = 1500,
+  iter_warmup = 1500,
   chains = 4,
   parallel_chains = 4,
   threads_per_chain = 2,
   save_warmup = TRUE
 )
 
-mcmc_trace(
-  fit_model_1$draws(inc_warmup = TRUE),
-  n_warmup = 2000,
-  pars=M1_PARAM_NAMES
-)
-
-draws <- fit_model_1$draws(variables = M1_PARAM_NAMES)
-draws_df <- as_draws_df(draws)
-bayesplot::mcmc_intervals(draws_df)
-bayesplot::mcmc_pairs(draws_df)
-
-fit_model_1$save_object("../fits/fit_model_1.rds")
+# mcmc_trace(
+#   fit_pt_model_separate_params$draws(inc_warmup = TRUE),
+#   n_warmup = 2000,
+#   pars=param_names_separate
+# )
+fit_pt_model_separate_params$save_object("../fits/fit_pt_model_separate_params.rds")
 
 ################################################################################
 fit_pt_model_separate_params_inversed <- pt_model_separate_params_inversed$sample(
