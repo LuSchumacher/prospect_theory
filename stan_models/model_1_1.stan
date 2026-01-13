@@ -31,13 +31,23 @@ functions {
   ) {
     real acc = 0;
     for (i in start:end) {
-      real utility_a = get_pt_utility(
+      real utility_a_raw = get_pt_utility(
         to_vector(outcomes_a[i]),
         alpha[gamble_type[i], subject_id[i]],
         lambda[gamble_type[i], subject_id[i]]
       );
-      real utility_b = get_pt_utility(
+      real utility_b_raw = get_pt_utility(
         to_vector(outcomes_b[i]),
+        alpha[gamble_type[i], subject_id[i]],
+        lambda[gamble_type[i], subject_id[i]]
+      );
+      real utility_a = inverse_utility(
+        utility_a_raw, 
+        alpha[gamble_type[i], subject_id[i]],
+        lambda[gamble_type[i], subject_id[i]]
+      );
+      real utility_b = inverse_utility(
+        utility_b_raw, 
         alpha[gamble_type[i], subject_id[i]],
         lambda[gamble_type[i], subject_id[i]]
       );
@@ -125,19 +135,29 @@ generated quantities {
   array[T] real log_lik;
   array[T] int y_rep;
 
-  for (t in 1:T) {
-    real utility_a = get_pt_utility(
-      to_vector(outcomes_a[t]),
-      alpha[gamble_type[t], subject_id[t]],
-      lambda[gamble_type[t], subject_id[t]]
+  for (i in 1:T) {
+    real utility_a_raw = get_pt_utility(
+      to_vector(outcomes_a[i]),
+      alpha[gamble_type[i], subject_id[i]],
+      lambda[gamble_type[i], subject_id[i]]
     );
-    real utility_b = get_pt_utility(
-      to_vector(outcomes_b[t]),
-      alpha[gamble_type[t], subject_id[t]],
-      lambda[gamble_type[t], subject_id[t]]
+    real utility_b_raw = get_pt_utility(
+      to_vector(outcomes_b[i]),
+      alpha[gamble_type[i], subject_id[i]],
+      lambda[gamble_type[i], subject_id[i]]
     );
-    real logit_p = tau[gamble_type[t], subject_id[t]] * (utility_b - utility_a);
-    log_lik[t] = bernoulli_logit_lpmf(choice[t] | logit_p);
-    y_rep[t] = bernoulli_logit_rng(logit_p);
+    real utility_a = inverse_utility(
+      utility_a_raw, 
+      alpha[gamble_type[i], subject_id[i]],
+      lambda[gamble_type[i], subject_id[i]]
+    );
+    real utility_b = inverse_utility(
+      utility_b_raw, 
+      alpha[gamble_type[i], subject_id[i]],
+      lambda[gamble_type[i], subject_id[i]]
+    );
+    real logit_p = tau[gamble_type[i], subject_id[i]] * (utility_b - utility_a);
+    log_lik[i] = bernoulli_logit_lpmf(choice[i] | logit_p);
+    y_rep[i] = bernoulli_logit_rng(logit_p);
   }
 }

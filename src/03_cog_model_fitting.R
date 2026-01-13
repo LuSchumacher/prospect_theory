@@ -29,7 +29,7 @@ stan_data = list(
   choice      = df$resp
 )
 
-init_fun <- function(chains = 4, n=N) {
+pt_init_fun <- function(chains = 4, n=N) {
   inits <- vector("list", chains)
   for (i in 1:chains) {
     inits[[i]] <- list(
@@ -50,43 +50,108 @@ init_fun <- function(chains = 4, n=N) {
   return(inits)
 }
 
+cpt_init_fun <- function(chains = 4, n = N) {
+  inits <- vector("list", chains)
+  for (i in 1:chains) {
+    inits[[i]] <- list(
+      intercept_lambda = rnorm(1, log(2), 0.5),
+      intercept_alpha  = rnorm(1, 0.0, 0.5),
+      intercept_tau    = rnorm(1, 0.0, 0.5),
+      intercept_gamma  = rnorm(1, 0.0, 0.3),
+      
+      b_lambda = rnorm(1, 0.0, 0.3),
+      b_alpha  = rnorm(1, 0.0, 0.3),
+      b_tau    = rnorm(1, 0.0, 0.3),
+      b_gamma  = rnorm(1, 0.0, 0.3),
+      
+      sigma_lambda = rnorm(1, 0, 0.5),
+      sigma_alpha  = rnorm(1, 0, 0.5),
+      sigma_tau    = rnorm(1, 0, 0.5),
+      sigma_gamma  = rnorm(1, 0, 0.5),
+      
+      z_lambda = rnorm(n, 0, 1),
+      z_alpha  = rnorm(n, 0, 1),
+      z_tau    = rnorm(n, 0, 1),
+      z_gamma  = rnorm(n, 0, 1)
+    )
+  }
+  return(inits)
+}
+
 M1_PARAM_NAMES <- c(
   "lambda_out[1]", "lambda_out[2]", "b_lambda",
   "alpha_out[1]", "alpha_out[2]", "b_alpha",
   "tau_out[1]", "tau_out[2]", "b_tau"
 )
-# M2_PARAM_NAMES <- c(
-#   "lambda_0_out", "lambda_1_out", "b_lambda",
-#   "alpha_0_out", "alpha_1_out", "b_alpha",
-#   "gamma_0_out", "gamma_1_out", "b_gamma",
-#   "tau_0_out", "tau_1_out", "b_tau"
-# )
+
+M2_PARAM_NAMES <- c(
+  "lambda_out[1]", "lambda_out[2]", "b_lambda",
+  "alpha_out[1]", "alpha_out[2]", "b_alpha",
+  "tau_out[1]", "tau_out[2]", "b_tau",
+  "gamma_out[1]", "gamma_out[2]", "b_gamma"
+)
+
 # M3_PARAM_NAMES <- c(
 #   "lambda_0_out", "lambda_1_out", "alpha_0_out",
 #   "alpha_1_out", "tau_0_out", "tau_1_out"
 # )
 
-model_1 <- cmdstan_model(
-  '../stan_models/model_1.stan',
+model_1_0 <- cmdstan_model(
+  '../stan_models/model_1_0.stan',
   cpp_options = list(stan_threads = TRUE),
   force_recompile = TRUE
 )
 
-# model_2 <- cmdstan_model(
-#   'model_2.stan',
-#   cpp_options = list(stan_threads = T)
-# )
+model_1_1 <- cmdstan_model(
+  '../stan_models/model_1_1.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+model_1_2 <- cmdstan_model(
+  '../stan_models/model_1_2.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+model_1_3 <- cmdstan_model(
+  '../stan_models/model_1_3.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+
+model_2_0 <- cmdstan_model(
+  '../stan_models/model_2_0.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+
+model_2_1 <- cmdstan_model(
+  '../stan_models/model_2_1.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+model_2_2 <- cmdstan_model(
+  '../stan_models/model_2_2.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+model_2_3 <- cmdstan_model(
+  '../stan_models/model_2_3.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+
+
 # model_3 <- cmdstan_model(
 #   'model_3.stan',
 #   cpp_options = list(stan_threads = T)
 # )
 
 # ---------------------------------------------------------------------------- #
-# MODEL FITTING
+# PT MODEL FITTING
 # ---------------------------------------------------------------------------- #
-fit_model_1 <- model_1$sample(
+fit_model_1_0 <- model_1_0$sample(
   data = stan_data,
-  init = init_fun(),
+  init = pt_init_fun(),
   max_treedepth = 10,
   adapt_delta = 0.85,
   refresh = 100,
@@ -98,6 +163,202 @@ fit_model_1 <- model_1$sample(
   save_warmup = TRUE
 )
 
+fit_model_1_0$save_object("../fits/fit_model_1_0.rds")
+
+fit_model_1_1 <- model_1_1$sample(
+  data = stan_data,
+  init = pt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_1_1$save_object("../fits/fit_model_1_1.rds")
+
+fit_model_1_2 <- model_1_2$sample(
+  data = stan_data,
+  init = pt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_1_2$save_object("../fits/fit_model_1_2.rds")
+
+fit_model_1_3 <- model_1_3$sample(
+  data = stan_data,
+  init = pt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_1_3$save_object("../fits/fit_model_1_3.rds")
+
+# ---------------------------------------------------------------------------- #
+# CPT MODEL FITTING
+# ---------------------------------------------------------------------------- #
+fit_model_2_0 <- model_2_0$sample(
+  data = stan_data,
+  init = cpt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_2_0$save_object("../fits/fit_model_2_0.rds")
+
+fit_model_2_1 <- model_2_1$sample(
+  data = stan_data,
+  init = cpt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_2_1$save_object("../fits/fit_model_2_1.rds")
+
+fit_model_2_2 <- model_2_2$sample(
+  data = stan_data,
+  init = cpt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_2_2$save_object("../fits/fit_model_2_2.rds")
+
+fit_model_2_3 <- model_2_3$sample(
+  data = stan_data,
+  init = cpt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_2_3$save_object("../fits/fit_model_2_3.rds")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ---------------------------------------------------------------------------- #
+# PT MODEL FITTING
+# ---------------------------------------------------------------------------- #
+# fit_model_1 <- model_1$sample(
+#   data = stan_data,
+#   init = pt_init_fun(),
+#   max_treedepth = 10,
+#   adapt_delta = 0.85,
+#   refresh = 100,
+#   iter_sampling = 2000,
+#   iter_warmup = 2000,
+#   chains = 4,
+#   parallel_chains = 4,
+#   threads_per_chain = 2,
+#   save_warmup = TRUE
+# )
+
+# fit_model_1$save_object("../fits/fit_model_1.rds")
+
+fit_model_1 <- readRDS("../fits/fit_model_1.rds")
+
 mcmc_trace(
   fit_model_1$draws(inc_warmup = TRUE),
   n_warmup = 2000,
@@ -106,32 +367,185 @@ mcmc_trace(
 
 draws <- fit_model_1$draws(variables = M1_PARAM_NAMES)
 draws_df <- as_draws_df(draws)
-bayesplot::mcmc_intervals(draws_df)
 bayesplot::mcmc_pairs(draws_df)
+# bayesplot::mcmc_intervals(draws_df)
 
-fit_model_1$save_object("../fits/fit_model_1.rds")
+
+log_lik <- fit_model_1$draws("log_lik")
+loo_model_1 <- loo(log_lik)
+log_lik <- fit_model_1_1$draws("log_lik")
+loo_model_1_1 <- loo(log_lik)
+
+loo_compare(loo_model_1, loo_model_1_1)
+
 
 ################################################################################
-fit_pt_model_separate_params_inversed <- pt_model_separate_params_inversed$sample(
+fit_model_1_1 <- model_1_1$sample(
   data = stan_data,
-  init = init_fun(),
-  max_treedepth = 5,
+  init = pt_init_fun(),
+  max_treedepth = 10,
   adapt_delta = 0.85,
-  refresh = 50,
-  iter_sampling = 1500,
-  iter_warmup = 1500,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
   chains = 4,
   parallel_chains = 4,
   threads_per_chain = 2,
   save_warmup = TRUE
 )
 
-# mcmc_trace(
-#   fit_pt_model_separate_params_inversed$draws(inc_warmup = TRUE),
-#   n_warmup = 2000,
-#   pars=param_names_separate
-# )
-fit_pt_model_separate_params_inversed$save_object("../fits/fit_pt_model_separate_params_inversed.rds")
+fit_model_1_1$save_object("../fits/fit_model_1_1.rds")
+
+mcmc_trace(
+  fit_model_1_1$draws(inc_warmup = TRUE),
+  n_warmup = 2000,
+  pars=M1_PARAM_NAMES
+)
+
+draws <- fit_model_1_1$draws(variables = M1_PARAM_NAMES)
+draws_df <- as_draws_df(draws)
+bayesplot::mcmc_pairs(draws_df)
+  
+# ---------------------------------------------------------------------------- #
+# CPT MODEL FITTING
+# ---------------------------------------------------------------------------- #
+fit_model_2 <- model_2$sample(
+  data = stan_data,
+  init = cpt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_2$save_object("../fits/fit_model_2.rds")
+
+
+fit_model_2_1 <- model_2_1$sample(
+  data = stan_data,
+  init = cpt_init_fun(),
+  max_treedepth = 10,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_2_1$save_object("../fits/fit_model_2_1.rds")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################################################################################ 
+################################################################################
+################################################################################
+
+draws_tidy <- draws_df %>%
+  select(all_of(M1_PARAM_NAMES)) %>%
+  pivot_longer(everything(), names_to = "parameter", values_to = "value") %>%
+  mutate(
+    family = case_when(
+      grepl("lambda", parameter) ~ "lambda",
+      grepl("alpha", parameter)  ~ "alpha",
+      grepl("tau", parameter)    ~ "tau"
+    ),
+    panel = case_when(
+      grepl("out", parameter)  ~ "PT model parameters",
+      grepl("beta", parameter) ~ "Effect of gamble type"
+    ),
+    gamble_type = case_when(
+      parameter %in% c("lambda_out[1]","alpha_out[1]","tau_out[1]") ~ "confounded",
+      parameter %in% c("lambda_out[2]","alpha_out[2]","tau_out[2]") ~ "unconfounded",
+      TRUE ~ NA_character_
+    ),
+    # force desired column order: params in col 1, betas in col 2
+    panel = factor(panel, levels = c("PT model parameters", "Effect of gamble type"))
+  )
+
+# plotting
+FONT_SCALER <- 0
+pt_model_params <- ggplot() +
+  geom_density(
+    data = draws_tidy %>% filter(panel == "PT model parameters"),
+    aes(x = value, fill = gamble_type),
+    alpha = 0.75, color = NA
+  ) +
+  scale_fill_manual(values = COLOR_PALETTE, name = "Gamble type") +
+  geom_density(
+    data = draws_tidy %>% filter(panel == "Effect of gamble type"),
+    aes(x = value),
+    fill = "darkgray", alpha = 0.75, color = NA
+  ) +
+  facet_grid(
+    family ~ panel,
+    scales = "free",
+    labeller = labeller(
+      family = label_parsed,   # Greek letters
+      panel  = label_value     # plain text
+    )
+  ) +
+  geom_vline(
+    data = draws_tidy %>% filter(panel == "Effect of gamble type"),
+    aes(xintercept = 0),
+    linetype = "dashed", inherit.aes = FALSE
+  ) +
+  labs(x = "Value", y = "Density") +
+  ggthemes::theme_tufte(base_size = FONT_SIZE_2) +
+  theme(
+    axis.title.x = element_text(margin = margin(t = 12)),
+    axis.title.y = element_text(margin = margin(r = 12)),
+    axis.line = element_line(linewidth = 0.5, color = "#969696"),
+    axis.ticks = element_line(color = "#969696"),
+    axis.text.x = element_text(size = FONT_SIZE_3 - FONT_SCALER, vjust = 0.5),
+    axis.text.y = element_text(size = FONT_SIZE_3 - FONT_SCALER),
+    strip.text.x = element_text(size = FONT_SIZE_2 - FONT_SCALER),
+    strip.text.y = element_text(size = FONT_SIZE_2 - FONT_SCALER, hjust = 0, angle = 0),
+    panel.grid.major = element_line(color = scales::alpha("gray70", 0.3)),
+    panel.grid.minor = element_line(color = scales::alpha("gray70", 0.15)),
+    panel.background = element_blank(),
+    panel.spacing = unit(1.2, "lines"),
+    legend.position = "bottom",
+    legend.margin = margin(t = -5, r = 0, b = 0, l = 0),
+    legend.spacing.y = unit(0.2, "cm"),
+  )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ################################################################################
 # PT REGRESSION APPROACH
