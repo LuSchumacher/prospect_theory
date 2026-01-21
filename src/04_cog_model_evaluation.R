@@ -3,19 +3,24 @@ library(magrittr)
 library(cmdstanr)
 library(bayesplot)
 library(posterior)
+library(loo)
 
 FONT_SIZE_1 <- 22
 FONT_SIZE_2 <- 20
 FONT_SIZE_3 <- 18
 COLOR_PALETTE <- c('#27374D', '#B70404')
+COLOR_PALETTE <- c('#c96016', '#42686C')
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 options(mc.cores = 8)
 
 emp_data <- read_csv('../data/study_data_prepared.csv')
 
-fit_model_1 <- readRDS("../fits/fit_model_1.rds")
-fit_model_1_1 <- readRDS("../fits/fit_model_1_1.rds")
+models <- c(
+  "fit_model_1_0", "fit_model_1_1", "fit_model_1_2", "fit_model_1_3",
+  "fit_model_2_0", "fit_model_2_1", "fit_model_2_2", "fit_model_2_3",
+  "fit_model_3_0", "fit_model_3_1"
+)
 
 M1_PARAM_NAMES <- c(
   "lambda_out[1]", "lambda_out[2]", "b_lambda",
@@ -23,46 +28,82 @@ M1_PARAM_NAMES <- c(
   "tau_out[1]", "tau_out[2]", "b_tau"
 )
 
+M2_PARAM_NAMES <- c(
+  "lambda_out[1]", "lambda_out[2]", "b_lambda",
+  "alpha_out[1]", "alpha_out[2]", "b_alpha",
+  "tau_out[1]", "tau_out[2]", "b_tau",
+  "gamma_out[1]", "gamma_out[2]", "b_gamma"
+)
+
+M3_PARAM_NAMES <- c(
+  "b_loss_out[1]", "b_loss_out[2]", "beta_b_loss",
+  "b_var_out[1]", "b_var_out[2]", "beta_b_var",
+  "tau_out[1]", "tau_out[2]", "b_tau"
+)
+
 # ---------------------------------------------------------------------------- #
-# POSTERIOR RE-SIMULATION
+# MODEL COMPARISON
 # ---------------------------------------------------------------------------- #
-draws <- fit_model_1$draws(variables = M1_PARAM_NAMES)
+loos <- list()
+for (i in seq_along(models)) {
+  model <- models[i]
+  model_fit <- readRDS(paste0("../fits/", model, ".rds"))
+  log_lik <- model_fit$draws("log_lik", format = "draws_array")
+  loo_model <- loo(log_lik, cores = getOption("mc.cores", 8))
+  loos[[i]] <- loo_model
+  rm(model_fit)
+  gc()
+}
+
+model_comparison <- loo_compare(
+  loos[[1]], loos[[2]], loos[[3]], loos[[4]],
+  loos[[5]], loos[[6]], loos[[7]], loos[[8]],
+  loos[[9]], loos[[10]]
+  )
+
+# ---------------------------------------------------------------------------- #
+# POSTERIOR ESTIMATES
+# ---------------------------------------------------------------------------- #
+fit_model_2_2 <- readRDS(paste0("../fits/", models[7], ".rds"))
+draws <- fit_model_2_2$draws(variables = M2_PARAM_NAMES)
 draws_df <- as_draws_df(draws)
 
 draws_tidy <- draws_df %>%
-  select(all_of(M1_PARAM_NAMES)) %>%
+  select(all_of(M2_PARAM_NAMES)) %>%
   pivot_longer(everything(), names_to = "parameter", values_to = "value") %>%
   mutate(
     family = case_when(
       grepl("lambda", parameter) ~ "lambda",
       grepl("alpha", parameter)  ~ "alpha",
-      grepl("tau", parameter)    ~ "tau"
+      grepl("tau", parameter)    ~ "tau",
+      grepl("gamma", parameter)    ~ "gamma"
     ),
     panel = case_when(
-      grepl("out", parameter)  ~ "PT model parameters",
+      grepl("out", parameter)  ~ "CPT model parameters",
       grepl("b_", parameter) ~ "Effect of gamble type"
     ),
     gamble_type = case_when(
-      parameter %in% c("lambda_out[1]","alpha_out[1]","tau_out[1]") ~ "confounded",
-      parameter %in% c("lambda_out[2]","alpha_out[2]","tau_out[2]") ~ "unconfounded",
+      parameter %in% c("lambda_out[1]","alpha_out[1]","tau_out[1]", "gamma_out[1]") ~ "confounded",
+      parameter %in% c("lambda_out[2]","alpha_out[2]","tau_out[2]", "gamma_out[2]") ~ "unconfounded",
       TRUE ~ NA_character_
     ),
-    panel = factor(panel, levels = c("PT model parameters", "Effect of gamble type"))
+    panel = factor(panel, levels = c("CPT model parameters", "Effect of gamble type")),
+    family = forcats::fct_relevel(family, "lambda", "alpha", "tau", "gamma")
   )
 
 # plotting
 FONT_SCALER <- 0
-pt_model_params <- ggplot() +
+cpt_model_params <- ggplot() +
   geom_density(
-    data = draws_tidy %>% filter(panel == "PT model parameters"),
+    data = draws_tidy %>% filter(panel == "CPT model parameters"),
     aes(x = value, fill = gamble_type),
-    alpha = 0.75, color = NA
+    alpha = 1, color = NA
   ) +
   scale_fill_manual(values = COLOR_PALETTE, name = "Gamble type") +
   geom_density(
     data = draws_tidy %>% filter(panel == "Effect of gamble type"),
     aes(x = value),
-    fill = "darkgray", alpha = 0.75, color = NA
+    fill = "darkgray", alpha = 1, color = NA
   ) +
   facet_grid(
     family ~ panel,
@@ -98,8 +139,8 @@ pt_model_params <- ggplot() +
   )
 
 ggsave(
-  '../plots/param_estimates_model_1.pdf',
-  pt_model_params,
+  '../plots/param_estimates_model_2_2.pdf',
+  cpt_model_params,
   device = 'pdf', dpi = 300,
   width = 10, height = 6
 )

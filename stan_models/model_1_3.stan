@@ -71,33 +71,28 @@ data {
 }
 
 parameters {
-  // Group-level intercepts and slopes
   real intercept_lambda;
   real b_lambda;
   real intercept_alpha;
   real b_alpha;
   real intercept_tau;
   real b_tau;
-
-  // Subject-level random effects (intercept and slope)
-  matrix[N, 2] z_lambda; // intercept and slope
+  matrix[N, 2] z_lambda;
   matrix[N, 2] z_alpha;
   matrix[N, 2] z_tau;
-
-  // Group-level SDs for intercept and slope
-  vector<lower=0>[2] sigma_lambda;
-  vector<lower=0>[2] sigma_alpha;
-  vector<lower=0>[2] sigma_tau;
-
-  // Correlation matrices for intercept-slope
+  vector[2] sigma_lambda;
+  vector[2] sigma_alpha;
+  vector[2] sigma_tau;
   corr_matrix[2] Omega_lambda;
   corr_matrix[2] Omega_alpha;
   corr_matrix[2] Omega_tau;
 }
 
 transformed parameters {
+  vector[2] s_lambda = log1p_exp(sigma_lambda);
+  vector[2] s_alpha  = log1p_exp(sigma_alpha);
+  vector[2] s_tau    = log1p_exp(sigma_tau);
   vector[2] effect_coding = [-0.5, 0.5]';
-
   matrix[N, 2] lambda_raw =
     (diag_pre_multiply(sigma_lambda, cholesky_decompose(Omega_lambda)) * transpose(z_lambda))';
   matrix[N, 2] alpha_raw =
@@ -129,16 +124,14 @@ transformed parameters {
 model {
   // Priors
   intercept_lambda ~ normal(2, 1);
-  b_lambda ~ normal(0, 0.5);
   intercept_alpha ~ normal(0, 1);
-  b_alpha ~ normal(0, 0.5);
   intercept_tau ~ normal(0.5, 2);
+  b_lambda ~ normal(0, 0.5);
+  b_alpha ~ normal(0, 0.5);
   b_tau ~ normal(0, 0.5);
-
   sigma_lambda ~ normal(0, 1);
   sigma_alpha ~ normal(0, 1);
   sigma_tau ~ normal(0, 1);
-
   Omega_lambda ~ lkj_corr(2);
   Omega_alpha ~ lkj_corr(2);
   Omega_tau ~ lkj_corr(2);
