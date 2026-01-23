@@ -1,18 +1,13 @@
 library(tidyverse)
-library(magrittr)
-library(cmdstanr)
-library(bayesplot)
-library(posterior)
-
-FONT_SIZE_1 <- 22
-FONT_SIZE_2 <- 20
-FONT_SIZE_3 <- 18
-COLOR_PALETTE <- c('#27374D', '#B70404')
+library(brms)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 df <- read_csv('../data/study_data_prepared.csv') %>% 
-  mutate(gamble_type = as_factor(gamble_type))
+  mutate(
+    gamble_type = as_factor(gamble_type),
+    ev_diff = ev_b - ev_a
+  )
 
 contrasts(df$gamble_type) <- rbind(-0.5, 0.5)
 
@@ -34,13 +29,18 @@ glm_fit <- brm(
 
 conditional_effects(glm_fit)
 
+bf <- 1 / hypothesis(glm_fit, "ev_diff = 0")$hypothesis["Evid.Ratio"]
+bf
+bf <- 1 / hypothesis(glm_fit, "ev_diff:gamble_type1 = 0")$hypothesis["Evid.Ratio"]
+bf
+
 bf <- 1 / hypothesis(glm_fit, "gamble_typeunconfounded = 0")$hypothesis["Evid.Ratio"]
 bf <- hypothesis(glm_fit, "gamble_typeunconfounded < 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(glm_fit, "ev_diff = 0")$hypothesis["Evid.Ratio"]
-bf <- hypothesis(glm_fit, "ev_diff < 0")$hypothesis["Evid.Ratio"]
-bf <- 1 / hypothesis(glm_fit, "ev_diff:gamble_typeunconfounded = 0")$hypothesis["Evid.Ratio"]
 
-plot(hypothesis(glm_fit, "gamble_typeunconfounded < 0"))
+bf <- hypothesis(glm_fit, "ev_diff < 0")$hypothesis["Evid.Ratio"]
+
+
+plot(hypothesis(glm_fit, "ev_diff:gamble_type1 = 0"))
 plot(hypothesis(glm_fit, "ev_diff < 0"))
 plot(hypothesis(glm_fit, "ev_diff:gamble_typeunconfounded = 0"))
 
