@@ -8,7 +8,6 @@ library(loo)
 FONT_SIZE_1 <- 22
 FONT_SIZE_2 <- 20
 FONT_SIZE_3 <- 18
-COLOR_PALETTE <- c('#27374D', '#B70404')
 COLOR_PALETTE <- c('#c96016', '#42686C')
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -61,10 +60,14 @@ model_comparison <- loo_compare(
   loos[[9]], loos[[10]]
   )
 
+model_comparison %>%
+  as_tibble(rownames = "model") %>% 
+  write_csv("../data/model_comparison.csv")
+
 # ---------------------------------------------------------------------------- #
 # POSTERIOR ESTIMATES
 # ---------------------------------------------------------------------------- #
-fit_model <- readRDS(paste0("../fits/", models[7], ".rds"))
+fit_model <- readRDS(paste0("../fits/", models[8], ".rds"))
 draws <- fit_model$draws(variables = M2_PARAM_NAMES)
 draws_df <- as_draws_df(draws)
 
@@ -137,7 +140,7 @@ cpt_model_params <- ggplot() +
   )
 
 ggsave(
-  '../plots/cpt_model_posteriors.pdf',
+  '../plots/cpt_model_inverse_posteriors.pdf',
   cpt_model_params,
   device = 'pdf', dpi = 300,
   width = 10, height = 7
@@ -178,6 +181,12 @@ pred_summary <- pred_data %>%
   ) %>% 
   mutate(gamble_type = lottery_type)
 
+emp_data %>% 
+  group_by(gamble_type) %>% 
+  summarise(
+    choice_prop = mean(resp)
+  )
+
 emp_summary <- emp_data %>% 
   group_by(id, gamble_type, ev_diff) %>% 
   summarise(
@@ -192,14 +201,22 @@ emp_summary <- emp_data %>%
   )
 
 dodge <- position_dodge(width = 0.5)
-# breaks_vals <- sort(unique(emp_data$ev_diff))
+breaks_vals <- sort(unique(emp_data$ev_diff))
 
 ggplot(pred_summary, aes(
   x = ev_diff, y = mean_resp,
   color = gamble_type,
   fill = gamble_type
 )) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.4, color = NA) +
+  geom_ribbon(
+    aes(
+      ymin = lower,
+      ymax = upper
+    ),
+    alpha = 0.4,
+    color = NA,
+    position = dodge
+  ) +
   geom_line(
     data = emp_summary,
     aes(
@@ -260,7 +277,7 @@ ggplot(pred_summary, aes(
   )
 
 ggsave(
-  '../plots/cpt_model_pp_check.pdf',
+  '../plots/cpt_model_inverse_pp_check.pdf',
   device = 'pdf', dpi = 300,
   width = 10, height = 7
 )
