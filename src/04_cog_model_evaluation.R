@@ -34,6 +34,7 @@ M2_PARAM_NAMES <- c(
   "gamma_out[1]", "gamma_out[2]", "b_gamma"
 )
 
+
 M3_PARAM_NAMES <- c(
   "b_loss_out[1]", "b_loss_out[2]", "beta_b_loss",
   "b_var_out[1]", "b_var_out[2]", "beta_b_var",
@@ -62,12 +63,13 @@ model_comparison <- loo_compare(
 
 model_comparison %>%
   as_tibble(rownames = "model") %>% 
-  write_csv("../data/model_comparison.csv")
+  mutate(across(where(is.numeric), ~ round(.x, 2))) %>%
+  write_csv("../data/model_comparison_2.csv")
 
 # ---------------------------------------------------------------------------- #
 # POSTERIOR ESTIMATES
 # ---------------------------------------------------------------------------- #
-fit_model <- readRDS(paste0("../fits/", models[8], ".rds"))
+fit_model <- readRDS(paste0("../fits/", models[7], ".rds"))
 draws <- fit_model$draws(variables = M2_PARAM_NAMES)
 draws_df <- as_draws_df(draws)
 
@@ -93,6 +95,36 @@ draws_tidy <- draws_df %>%
     panel = factor(panel, levels = c("CPT model parameters", "Effect of gamble type")),
     family = forcats::fct_relevel(family, "lambda", "alpha", "tau", "gamma")
   )
+
+estimate_summary <- draws_tidy %>% 
+  group_by(parameter) %>% 
+  summarise(
+    median = median(value),
+    ci_lower = quantile(value, 0.025),
+    ci_upper = quantile(value, 0.975)
+  ) %>% 
+  mutate(across(where(is.numeric), round, 2))
+
+
+calc_BF <- function(posterior_samples, prior_sd = 0.5) {
+  post_density <- density(posterior_samples, bw = "nrd0")
+  posterior_at_zero <- approx(post_density$x, post_density$y, xout = 0)$y
+  if(is.na(posterior_at_zero) || posterior_at_zero < 1e-10) {
+    posterior_at_zero <- 1e-10
+  }
+  prior_at_zero <- dnorm(0, mean = 0, sd = prior_sd)
+  BF10 <- prior_at_zero / posterior_at_zero
+  return(BF10)
+}
+
+compute_BFs <- function(fit, param_names, prior_sd = 0.5) {
+  sapply(param_names, function(param) {
+    samples <- as.numeric(fit$draws(param))
+    calc_BF(samples, prior_sd)
+  })
+}
+
+bf_summary <- round(compute_BFs(fit_model, M2_PARAM_NAMES[c(3, 6, 9, 12)]), 2)
 
 cpt_model_params <- ggplot() +
   geom_density(
@@ -196,7 +228,7 @@ emp_summary <- emp_data %>%
   group_by(gamble_type, ev_diff) %>% 
   summarise(
     mean_resp = mean(choice_prop),
-    std_resp = sd(choice_prop),
+    std_resp = sd(choice_prop) / sqrt(79),
     .groups = "drop"
   )
 

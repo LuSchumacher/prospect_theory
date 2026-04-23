@@ -236,6 +236,12 @@ model_2_3 <- cmdstan_model(
   force_recompile = TRUE
 )
 
+model_2_3_test <- cmdstan_model(
+  '../stan_models/model_2_3_test.stan',
+  cpp_options = list(stan_threads = TRUE),
+  force_recompile = TRUE
+)
+
 model_3_0 <- cmdstan_model(
   '../stan_models/model_3_0.stan',
   cpp_options = list(stan_threads = T),
@@ -381,6 +387,27 @@ fit_model_2_3 <- model_2_3$sample(
 )
 
 fit_model_2_3$save_object("../fits/fit_model_2_3.rds")
+
+
+fit_model_2_3_test <- model_2_3_test$sample(
+  data = stan_data,
+  init = cpt_init_fun_2(),
+  max_treedepth = 8,
+  adapt_delta = 0.85,
+  refresh = 100,
+  iter_sampling = 2000,
+  iter_warmup = 2000,
+  chains = 4,
+  parallel_chains = 4,
+  threads_per_chain = 2,
+  save_warmup = TRUE
+)
+
+fit_model_2_3_test$save_object("../fits/fit_model_2_3_test.rds")
+
+draws <- fit_model_2_3_test$draws(variables = M2_PARAM_NAMES)
+
+mcmc_pairs(draws)
 
 # ---------------------------------------------------------------------------- #
 # MVL MODEL FITTING
