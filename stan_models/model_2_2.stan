@@ -2,6 +2,7 @@ functions {
   real prelec_w(real p, real gamma) {
     return exp(-pow(-log(p), gamma));
   }
+  
   real get_cpt_utility(
     vector x,
     real alpha,
@@ -33,13 +34,7 @@ functions {
       (w2 - w1)  * v[2] +
       (w3 - w2)  * v[3];
   }
-  real inverse_utility(real u, real alpha, real lambda) {
-    if (u >= 0) {
-      return pow(u, 1 / alpha);
-    } else {
-      return -pow(abs(u) / lambda, 1 / alpha);
-    }
-  }
+  
   real partial_log_lik(
     array[] int choice_slice,
     int start, int end,
