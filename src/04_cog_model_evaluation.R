@@ -213,12 +213,6 @@ pred_summary <- pred_data %>%
   ) %>% 
   mutate(gamble_type = lottery_type)
 
-emp_data %>% 
-  group_by(gamble_type) %>% 
-  summarise(
-    choice_prop = mean(resp)
-  )
-
 emp_summary <- emp_data %>% 
   group_by(id, gamble_type, ev_diff) %>% 
   summarise(

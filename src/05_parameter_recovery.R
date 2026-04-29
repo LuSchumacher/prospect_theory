@@ -9,6 +9,13 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 NUM_SIMS <- 50
 
+PARAM_LABELS <- c(
+  lambda = expression(lambda),
+  alpha  = expression(alpha),
+  tau    = expression(tau),
+  gamma  = expression(gamma)
+)
+
 empirical_data <- read_csv("../data/study_data_prepared.csv") %>% 
   mutate(
     correct_choice = ifelse(ev_diff < 0, 1, 0),
@@ -39,40 +46,6 @@ gamble_set <- read_csv("../data/gamble_list.csv") %>%
     correct_choice = ifelse(ev_diff < 0, 1, 0),
     correct_choice = ifelse(ev_diff == 0, NA, correct_choice)
   )
-
-confounded_gambles <- gamble_set %>% 
-  filter(lottery_type == "confounded")
-
-unconfounded_gambles <- gamble_set %>% 
-  filter(lottery_type == "unconfounded")
-
-CONFOUNDED_OUTCOMES_A <- cbind(
-  confounded_gambles$outcome_a1,
-  confounded_gambles$outcome_a2,
-  confounded_gambles$outcome_a3
-)
-
-CONFOUNDED_OUTCOMES_B <- cbind(
-  confounded_gambles$outcome_b1,
-  confounded_gambles$outcome_b2,
-  confounded_gambles$outcome_b3
-)
-
-CONFOUNDED_CORRECT_CHOICE <- confounded_gambles$correct_choice
-
-UNCONFOUNDED_OUTCOMES_A <- cbind(
-  unconfounded_gambles$outcome_a1,
-  unconfounded_gambles$outcome_a2,
-  unconfounded_gambles$outcome_a3
-)
-
-UNCONFOUNDED_OUTCOMES_B <- cbind(
-  unconfounded_gambles$outcome_b1,
-  unconfounded_gambles$outcome_b2,
-  unconfounded_gambles$outcome_b3
-)
-
-UNCONFOUNDED_CORRECT_CHOICE <- unconfounded_gambles$correct_choice
 
 cpt_model <- cmdstan_model(
   '../stan_models/model_2_2.stan',
@@ -291,11 +264,6 @@ for (i in seq_len(NUM_SIMS)) {
 
 # write_csv(prior_draws, "../data/simulation_data/true_parameter.csv")
 
-hist(prior_draws$lambda, breaks=100)
-hist(prior_draws$alpha, breaks=100)
-hist(prior_draws$tau, breaks=100)
-hist(prior_draws$gamma, breaks=100)
-
 # ---------------------------------------------------------------------------- #
 # DATA SIMULATION
 # ---------------------------------------------------------------------------- #
@@ -397,27 +365,304 @@ for (i in 2:NUM_SIMS) {
 }
 
 # ---------------------------------------------------------------------------- #
-# EVALUATION
+# EVALUATION: GROUP-LEVEL
 # ---------------------------------------------------------------------------- #
 true_params <- read_csv("../data/simulation_data/true_parameter.csv")
 
-# post_medians <- model_fit$draws(
-#   variables = PARAM_NAMES,
-#   format = "df"
-# ) %>%
-#   as_tibble() %>% 
-#   select(-c(.draw, .iteration, .chain)) %>% 
-#   summarise(across(everything(), median)) %>%
-#   pivot_longer(
-#     cols = everything(),
-#     names_to = c("parameter", "condition"),
-#     names_pattern = "(.*)\\[(.*)\\]",
-#     values_to = "median"
-#   ) %>%
-#   mutate(
-#     parameter = str_remove(parameter, "_out$")
-#   )
-# 
-# true_params %>% 
-#   filter(sim_id == 1, subject == 1) %>% 
-#   select(starts_with("mu_"))
+files <- fs::dir_ls("../data/simulation_data/recovery/", glob = "*.csv")
+
+group_params_all <- tibble()
+individual_params_all <- tibble()
+
+for (file in files) {
+  estimated_params <- read_csv(file, show_col_types = FALSE)
+  sim_id <- as.integer(str_extract(basename(file), "\\d+"))
+  
+  # ---- long format ----
+  long <- estimated_params %>%
+    pivot_longer(
+      cols = everything(),
+      names_to = "param",
+      values_to = "value"
+    ) %>%
+    mutate(sim_id = sim_id)
+  
+  # ---- group-level ----
+  group_params <- long %>%
+    filter(str_detect(param, "_out")) %>%
+    mutate(
+      base_param = str_extract(param, "^[^_]+"),
+      condition  = as.integer(str_extract(param, "(?<=\\[)\\d+(?=\\])"))
+    ) %>%
+    select(sim_id, base_param, condition, value)
+  
+  # ---- individual-level ----
+  individual_params <- long %>%
+    filter(!str_detect(param, "_out")) %>%
+    mutate(
+      base_param = str_extract(param, "^[^\\[]+"),
+      condition  = as.integer(str_extract(param, "(?<=\\[)\\d+(?=,)")),
+      id         = as.integer(str_extract(param, "(?<=,)\\d+(?=\\])"))
+    ) %>%
+    select(sim_id, base_param, id, condition, value)
+  
+  group_params_all <- bind_rows(group_params_all, group_params)
+  individual_params_all <- bind_rows(individual_params_all, individual_params)
+}
+
+group_summary <- group_params_all %>%
+  group_by(sim_id, base_param, condition) %>%
+  summarise(
+    mean = median(value),
+    .groups = "drop"
+  )
+
+group_true <- true_params %>% 
+  group_by(sim_id, condition) %>% 
+  summarise(
+    lambda = mu_lambda[1],
+    alpha  = mu_alpha[1],
+    tau    = mu_tau[1],
+    gamma  = mu_gamma[1],
+    .groups = "drop"
+  ) %>% 
+  pivot_longer(
+    cols = c(lambda, alpha, tau, gamma),
+    names_to = "base_param",
+    values_to = "true_value"
+  )
+
+group_recovery <- group_summary %>%
+  rename(estimate = mean) %>%
+  inner_join(
+    group_true,
+    by = c("sim_id", "condition", "base_param")
+  ) %>%
+  mutate(
+    condition = recode(
+      as.character(condition),
+      `1` = "Confounded",
+      `2` = "Unconfounded"
+    ),
+    base_param = factor(
+      base_param,
+      levels = c("lambda", "alpha", "tau", "gamma")
+    )
+  )
+
+make_recovery_plot <- function(
+    data,
+    condition_label,
+    axis_limits,
+    font_size_1 = 18,
+    font_size_2 = 16,
+    font_size_3 = 14,
+    x_axis_label = "True value"
+) {
+  
+  df <- data %>%
+    filter(condition == condition_label) %>%
+    left_join(axis_limits, by = "base_param")
+  
+  ggplot(df, aes(x = true_value, y = estimate)) +
+    geom_point(alpha = 0.6) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    facet_wrap(
+      ~ base_param,
+      nrow = 1,
+      scales = "free",
+      labeller = as_labeller(PARAM_LABELS, default = label_parsed)
+    ) +
+    scale_x_continuous(n.breaks = 5) +
+    scale_y_continuous(n.breaks = 5) +
+    geom_blank(aes(x = xmin, y = xmin)) +
+    geom_blank(aes(x = xmax, y = xmax)) +
+    geom_blank(aes(x = xmin, y = xmax)) +
+    geom_blank(aes(x = xmax, y = xmin)) +
+    labs(
+      x = x_axis_label,
+      y = "Estimated value"
+    ) +
+    ggthemes::theme_tufte(base_size = font_size_3) +
+    theme(
+      plot.title = element_text(
+        size = font_size_1,
+        hjust = 0.5,
+        margin = margin(b = 8)
+      ),
+      axis.title.x = element_text(size = font_size_2, margin = margin(t = 12)),
+      axis.title.y = element_text(size = font_size_2, margin = margin(r = 12)),
+      axis.line = element_line(linewidth = 0.5, color = "#969696"),
+      axis.ticks = element_line(color = "#969696"),
+      axis.ticks.length = unit(.25, "cm"),
+      strip.text = element_text(size = font_size_2),
+      panel.grid.major = element_line(color = scales::alpha("gray70", 0.3)),
+      panel.grid.minor = element_line(color = scales::alpha("gray70", 0.15)),
+      panel.background = element_blank(),
+      panel.spacing = unit(1.2, "lines"),
+      legend.position = "bottom",
+      legend.margin = margin(t = -5, r = 0, b = 0, l = 0),
+      legend.spacing.y = unit(0.2, "cm")
+    )
+}
+
+axis_limits <- group_recovery %>%
+  group_by(base_param) %>%
+  summarise(
+    xmin = round(min(true_value, estimate, na.rm = TRUE), 1),
+    xmax = round(max(true_value, estimate, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+
+plot_confounded <- make_recovery_plot(
+  group_recovery,
+  "Confounded",
+  axis_limits,
+  x_axis_label = NULL
+) +
+  ggtitle("Confounded")
+
+plot_unconfounded <- make_recovery_plot(
+  group_recovery,
+  "Unconfounded",
+  axis_limits
+) +
+  ggtitle("Unconfounded")
+
+final_plot <- plot_confounded / plot_unconfounded
+
+ggsave(
+  filename = "../plots/parameter_recovery.pdf",
+  plot = final_plot,
+  width = 10,
+  height = 6,
+  dpi = 300,
+  bg = "white"
+)
+
+# ---------------------------------------------------------------------------- #
+# EVALUATION: INDIVIDUAL-LEVEL
+# ---------------------------------------------------------------------------- #
+individual_summary <- individual_params_all %>%
+  group_by(sim_id, id, base_param, condition) %>%
+  summarise(
+    mean = median(value),
+    .groups = "drop"
+  )
+
+individual_true <- true_params %>% 
+  rename(id = subject) %>% 
+  pivot_longer(
+    cols = c(lambda, alpha, tau, gamma),
+    names_to = "base_param",
+    values_to = "true_value"
+  ) %>%
+  select(sim_id, id, base_param, condition, true_value)
+
+individual_recovery <- individual_summary %>%
+  rename(estimate = mean) %>%
+  inner_join(
+    individual_true,
+    by = c("sim_id", "id", "base_param", "condition")
+  ) %>%
+  mutate(
+    condition = recode(
+      as.character(condition),
+      `1` = "Confounded",
+      `2` = "Unconfounded"
+    ),
+    base_param = factor(
+      base_param,
+      levels = c("lambda", "alpha", "tau", "gamma")
+    )
+  )
+
+axis_limits_individual <- individual_recovery %>%
+  group_by(base_param) %>%
+  summarise(
+    xmin = round(min(true_value, estimate, na.rm = TRUE), 1),
+    xmax = round(max(true_value, estimate, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+
+make_recovery_plot_individual <- function(
+    data,
+    condition_label,
+    axis_limits,
+    font_size_1 = 18,
+    font_size_2 = 16,
+    font_size_3 = 14,
+    x_axis_label = "True value"
+) {
+  
+  df <- data %>%
+    filter(condition == condition_label) %>%
+    left_join(axis_limits, by = "base_param")
+  
+  ggplot(df, aes(x = true_value, y = estimate)) +
+    geom_point(alpha = 0.5, size = 0.4) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    facet_wrap(
+      ~ base_param,
+      nrow = 1,
+      scales = "free",
+      labeller = as_labeller(PARAM_LABELS, default = label_parsed)
+    ) +
+    scale_x_continuous(n.breaks = 5) +
+    scale_y_continuous(n.breaks = 5) +
+    geom_blank(aes(x = xmin, y = xmin)) +
+    geom_blank(aes(x = xmax, y = xmax)) +
+    geom_blank(aes(x = xmin, y = xmax)) +
+    geom_blank(aes(x = xmax, y = xmin)) +
+    labs(
+      x = x_axis_label,
+      y = "Estimated value"
+    ) +
+    ggthemes::theme_tufte(base_size = font_size_3) +
+    theme(
+      plot.title = element_text(
+        size = font_size_1,
+        hjust = 0.5,
+        margin = margin(b = 8)
+      ),
+      axis.title.x = element_text(size = font_size_2, margin = margin(t = 12)),
+      axis.title.y = element_text(size = font_size_2, margin = margin(r = 12)),
+      axis.line = element_line(linewidth = 0.5, color = "#969696"),
+      axis.ticks = element_line(color = "#969696"),
+      axis.ticks.length = unit(.25, "cm"),
+      strip.text = element_text(size = font_size_2),
+      panel.grid.major = element_line(color = scales::alpha("gray70", 0.3)),
+      panel.grid.minor = element_line(color = scales::alpha("gray70", 0.15)),
+      panel.background = element_blank(),
+      panel.spacing = unit(1.2, "lines"),
+      legend.position = "bottom",
+      legend.margin = margin(t = -5, r = 0, b = 0, l = 0),
+      legend.spacing.y = unit(0.2, "cm")
+    )
+}
+
+plot_confounded_individual <- make_recovery_plot_individual(
+  individual_recovery,
+  "Confounded",
+  axis_limits_individual,
+  x_axis_label = NULL
+) +
+  ggtitle("Confounded")
+
+plot_unconfounded_individual <- make_recovery_plot_individual(
+  individual_recovery,
+  "Unconfounded",
+  axis_limits_individual
+) +
+  ggtitle("Unconfounded")
+
+final_plot_individual <- plot_confounded_individual / plot_unconfounded_individual
+
+ggsave(
+  filename = "../plots/parameter_recovery_individual.pdf",
+  plot = final_plot_individual,
+  width = 10,
+  height = 6,
+  dpi = 300,
+  bg = "white"
+)
