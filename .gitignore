@@ -3,5 +3,6 @@ __pycache__/
 *.ipynb_checkpoints
 *.Rhistory
 data/study_data/
+data/simulation_data/
 00_data_preparation.R
 fits/
