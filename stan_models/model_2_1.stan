@@ -11,27 +11,24 @@ functions {
     vector[3] v;
     array[3] int idx;
   
-    // Value function
     for (k in 1:3) {
-      if (x[k] >= 0)
+      if (x[k] >= 0) {
         v[k] = pow(x[k], alpha);
-      else
+      } else {
         v[k] = -lambda * pow(abs(x[k]), alpha);
+      }
     }
   
-    // Sort by value
     idx = sort_indices_asc(v);
     v = v[idx];
   
-    // Fixed cumulative probabilities
-    real w1 = prelec_w(1.0 / 3.0, gamma);
-    real w2 = prelec_w(2.0 / 3.0, gamma);
-    real w3 = 1.0;
+    real w_1_3 = prelec_w(1.0 / 3.0, gamma);
+    real w_2_3 = prelec_w(2.0 / 3.0, gamma);
   
     return
-      (w1)       * v[1] +
-      (w2 - w1)  * v[2] +
-      (w3 - w2)  * v[3];
+      w_1_3 * v[1] +
+      (w_2_3 - w_1_3) * v[2] +
+      w_1_3 * v[3];
   }
   real inverse_utility(real u, real alpha, real lambda) {
     if (u >= 0) {

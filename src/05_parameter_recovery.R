@@ -114,7 +114,7 @@ simulate_choices <- function(
       gamma[id_vector[i], condition[i]]
     )
     
-    logit_p <- tau * (utility_b - utility_a)
+    logit_p <- logit_p <- tau[id_vector[i], condition[i]] * (utility_b - utility_a)
     p <- plogis(logit_p)
     choices[i] <- rbinom(1, 1, p)  # 1 = choose B
   }
@@ -441,8 +441,8 @@ group_recovery <- group_summary %>%
   mutate(
     condition = recode(
       as.character(condition),
-      `1` = "Confounded",
-      `2` = "Unconfounded"
+      `1` = "Aligned",
+      `2` = "Opposed"
     ),
     base_param = factor(
       base_param,
@@ -516,18 +516,18 @@ axis_limits <- group_recovery %>%
 
 plot_confounded <- make_recovery_plot(
   group_recovery,
-  "Confounded",
+  "Aligned",
   axis_limits,
   x_axis_label = NULL
 ) +
-  ggtitle("Confounded")
+  ggtitle("Aligned")
 
 plot_unconfounded <- make_recovery_plot(
   group_recovery,
-  "Unconfounded",
+  "Opposed",
   axis_limits
 ) +
-  ggtitle("Unconfounded")
+  ggtitle("Opposed")
 
 final_plot <- plot_confounded / plot_unconfounded
 
@@ -568,8 +568,8 @@ individual_recovery <- individual_summary %>%
   mutate(
     condition = recode(
       as.character(condition),
-      `1` = "Confounded",
-      `2` = "Unconfounded"
+      `1` = "Aligned",
+      `2` = "Opposed"
     ),
     base_param = factor(
       base_param,
@@ -643,18 +643,18 @@ make_recovery_plot_individual <- function(
 
 plot_confounded_individual <- make_recovery_plot_individual(
   individual_recovery,
-  "Confounded",
+  "Aligned",
   axis_limits_individual,
   x_axis_label = NULL
 ) +
-  ggtitle("Confounded")
+  ggtitle("Aligned")
 
 plot_unconfounded_individual <- make_recovery_plot_individual(
   individual_recovery,
-  "Unconfounded",
+  "Opposed",
   axis_limits_individual
 ) +
-  ggtitle("Unconfounded")
+  ggtitle("Opposed")
 
 final_plot_individual <- plot_confounded_individual / plot_unconfounded_individual
 

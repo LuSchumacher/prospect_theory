@@ -75,11 +75,11 @@ transformed parameters {
   vector[2] s_tau    = log1p_exp(sigma_tau);
   vector[2] effect_coding = [-0.5, 0.5]';
   matrix[N, 2] lambda_raw =
-    (diag_pre_multiply(sigma_lambda, cholesky_decompose(Omega_lambda)) * transpose(z_lambda))';
+    (diag_pre_multiply(s_lambda, cholesky_decompose(Omega_lambda)) * transpose(z_lambda))';
   matrix[N, 2] alpha_raw =
-    (diag_pre_multiply(sigma_alpha, cholesky_decompose(Omega_alpha)) * transpose(z_alpha))';
+    (diag_pre_multiply(s_alpha, cholesky_decompose(Omega_alpha)) * transpose(z_alpha))';
   matrix[N, 2] tau_raw =
-    (diag_pre_multiply(sigma_tau, cholesky_decompose(Omega_tau)) * transpose(z_tau))';
+    (diag_pre_multiply(s_tau, cholesky_decompose(Omega_tau)) * transpose(z_tau))';
 
   matrix[2, N] lambda;
   matrix[2, N] alpha;

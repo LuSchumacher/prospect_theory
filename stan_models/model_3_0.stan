@@ -1,7 +1,10 @@
 functions {
   real get_mvl_utility(vector x, real b_var, real b_loss) {
-    return mean(x) - b_var * sd(x) - b_loss * abs(min(x));
+    real ev = mean(x);
+    real var_x = dot_self(x - rep_vector(ev, num_elements(x))) / num_elements(x);
+    return ev - b_var * var_x - b_loss * abs(min(x));
   }
+
   real partial_log_lik(
     array[] int choice_slice,
     int start, int end,
@@ -14,22 +17,26 @@ functions {
     matrix tau
   ) {
     real acc = 0;
+
     for (i in start:end) {
       int s = subject_id[i];
       int c = gamble_type[i];
+
       real utility_a = get_mvl_utility(
-        to_vector(outcomes_a[i]),
-        b_var[c, s],
-        b_loss[c, s]
+        to_vector(outcomes_a[i]), b_var[c, s], b_loss[c, s]
       );
+
       real utility_b = get_mvl_utility(
-        to_vector(outcomes_b[i]),
-        b_var[c, s],
-        b_loss[c, s]
+        to_vector(outcomes_b[i]), b_var[c, s], b_loss[c, s]
       );
+
       real logit_p = tau[c, s] * (utility_b - utility_a);
-      acc += bernoulli_logit_lpmf(choice_slice[i - start + 1] | logit_p);
+
+      acc += bernoulli_logit_lpmf(
+        choice_slice[i - start + 1] | logit_p
+      );
     }
+
     return acc;
   }
 }
@@ -84,13 +91,13 @@ transformed parameters {
 
 model {
   intercept_b_loss ~ normal(0, 2);
-  intercept_b_var  ~ normal(0, 2);
+  intercept_b_var  ~ normal(0, 0.01);
   intercept_tau    ~ normal(0.5, 2);
   beta_b_loss      ~ normal(0, 0.5);
-  beta_b_var       ~ normal(0, 0.5);
+  beta_b_var       ~ normal(0, 0.005);
   beta_tau         ~ normal(0, 0.5);
   sigma_b_loss     ~ normal(0, 1);
-  sigma_b_var      ~ normal(0, 1);
+  sigma_b_var      ~ normal(-5, 1);
   sigma_tau        ~ normal(0, 1);
   z_b_loss         ~ std_normal();
   z_b_var          ~ std_normal();

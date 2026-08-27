@@ -2,6 +2,37 @@ functions {
   real prelec_w(real p, real gamma) {
     return exp(-pow(-log(p), gamma));
   }
+  // real get_cpt_utility(
+  //   vector x,
+  //   real alpha,
+  //   real lambda,
+  //   real gamma
+  // ) {
+  //   vector[3] v;
+  //   array[3] int idx;
+  // 
+  //   // Value function
+  //   for (k in 1:3) {
+  //     if (x[k] >= 0)
+  //       v[k] = pow(x[k], alpha);
+  //     else
+  //       v[k] = -lambda * pow(abs(x[k]), alpha);
+  //   }
+  // 
+  //   // Sort by value
+  //   idx = sort_indices_asc(v);
+  //   v = v[idx];
+  // 
+  //   // Fixed cumulative probabilities
+  //   real w1 = prelec_w(1.0 / 3.0, gamma);
+  //   real w2 = prelec_w(2.0 / 3.0, gamma);
+  //   real w3 = 1.0;
+  // 
+  //   return
+  //     (w1)       * v[1] +
+  //     (w2 - w1)  * v[2] +
+  //     (w3 - w2)  * v[3];
+  // }
   real get_cpt_utility(
     vector x,
     real alpha,
@@ -11,27 +42,26 @@ functions {
     vector[3] v;
     array[3] int idx;
   
-    // Value function
     for (k in 1:3) {
-      if (x[k] >= 0)
+      if (x[k] >= 0) {
         v[k] = pow(x[k], alpha);
-      else
+      } else {
         v[k] = -lambda * pow(abs(x[k]), alpha);
+      }
     }
   
-    // Sort by value
     idx = sort_indices_asc(v);
     v = v[idx];
   
-    // Fixed cumulative probabilities
-    real w1 = prelec_w(1.0 / 3.0, gamma);
-    real w2 = prelec_w(2.0 / 3.0, gamma);
-    real w3 = 1.0;
+    // CPT weighting is applied separately within the loss and gain domains.
+    // Each option contains one loss and two gains with probability 1/3 each.
+    real w_1_3 = prelec_w(1.0 / 3.0, gamma);
+    real w_2_3 = prelec_w(2.0 / 3.0, gamma);
   
     return
-      (w1)       * v[1] +
-      (w2 - w1)  * v[2] +
-      (w3 - w2)  * v[3];
+      w_1_3               * v[1] +
+      (w_2_3 - w_1_3)     * v[2] +
+      w_1_3               * v[3];
   }
   real inverse_utility(real u, real alpha, real lambda) {
     if (u >= 0) {
@@ -126,16 +156,16 @@ transformed parameters {
   vector[2] s_gamma  = log1p_exp(sigma_gamma);
   vector[2] effect_coding = [-0.5, 0.5]';
   matrix[N, 2] lambda_raw = 
-    (diag_pre_multiply(sigma_lambda, cholesky_decompose(Omega_lambda)) * 
+    (diag_pre_multiply(s_lambda, cholesky_decompose(Omega_lambda)) * 
      transpose(z_lambda))';
   matrix[N, 2] alpha_raw =
-    (diag_pre_multiply(sigma_alpha, cholesky_decompose(Omega_alpha)) *
+    (diag_pre_multiply(s_alpha, cholesky_decompose(Omega_alpha)) *
      transpose(z_alpha))';
   matrix[N, 2] tau_raw =
-    (diag_pre_multiply(sigma_tau, cholesky_decompose(Omega_tau)) *
+    (diag_pre_multiply(s_tau, cholesky_decompose(Omega_tau)) *
      transpose(z_tau))';
   matrix[N, 2] gamma_raw =
-    (diag_pre_multiply(sigma_gamma, cholesky_decompose(Omega_gamma)) *
+    (diag_pre_multiply(s_gamma, cholesky_decompose(Omega_gamma)) *
      transpose(z_gamma))';
 
   matrix[2, N] lambda;
