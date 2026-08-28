@@ -1,209 +1,169 @@
 library(tidyverse)
-library(magrittr)
-library(LaplacesDemon)
 library(cmdstanr)
 library(patchwork)
-library(posterior)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-NUM_SIMS <- 50
+# ---------------------------------------------------------------------------- #
+# SETTINGS
+# ---------------------------------------------------------------------------- #
+NUM_SIMS <- 2
 
-PARAM_LABELS <- c(
+RECOVERY_DIR <- "../data/simulation_data/recovery_cpt_sign_separated"
+TRUE_PARAMETER_FILE <- file.path(RECOVERY_DIR, "true_parameters.csv")
+CHOICE_DIR <- file.path(RECOVERY_DIR, "choices")
+SUMMARY_DIR <- file.path(RECOVERY_DIR, "fit_summaries")
+DIAGNOSTIC_DIR <- file.path(RECOVERY_DIR, "diagnostics")
+
+dir.create(RECOVERY_DIR, recursive = TRUE, showWarnings = FALSE)
+dir.create(CHOICE_DIR, recursive = TRUE, showWarnings = FALSE)
+dir.create(SUMMARY_DIR, recursive = TRUE, showWarnings = FALSE)
+dir.create(DIAGNOSTIC_DIR, recursive = TRUE, showWarnings = FALSE)
+
+PARAMETER_LEVELS <- c("lambda", "alpha", "tau", "gamma")
+
+PARAMETER_LABELS <- c(
   lambda = expression(lambda),
-  alpha  = expression(alpha),
-  tau    = expression(tau),
-  gamma  = expression(gamma)
+  alpha = expression(alpha),
+  tau = expression(tau),
+  gamma = expression(gamma)
 )
 
-empirical_data <- read_csv("../data/study_data_prepared.csv") %>% 
+EFFECT_LABELS <- c(
+  b_lambda = expression(b[lambda]),
+  b_alpha = expression(b[alpha]),
+  b_tau = expression(b[tau]),
+  b_gamma = expression(b[gamma])
+)
+
+# ---------------------------------------------------------------------------- #
+# EMPIRICAL DESIGN AND MODEL
+# ---------------------------------------------------------------------------- #
+empirical_data <- read_csv(
+  "../data/study_data_prepared.csv",
+  show_col_types = FALSE
+) |>
   mutate(
-    correct_choice = ifelse(ev_diff < 0, 1, 0),
-    correct_choice = ifelse(ev_diff == 0, NA, correct_choice)
+    subject_id = dense_rank(id),
+    condition = if_else(gamble_type == "confounded", 1L, 2L)
   )
 
-NUM_SUBJECTS <- length(unique(empirical_data$id))
-ID_VECTOR <- empirical_data$id
-CONDITION <- ifelse(empirical_data$gamble_type == "confounded", 1, 2)
+NUM_SUBJECTS <- n_distinct(empirical_data$subject_id)
+NUM_TRIALS <- nrow(empirical_data)
+SUBJECT_ID <- empirical_data$subject_id
+CONDITION <- empirical_data$condition
 
-EMPIRICAL_OUTCOMES_A <- cbind(
-  empirical_data$outcome_a1,
-  empirical_data$outcome_a2,
-  empirical_data$outcome_a3
+OUTCOMES_A <- as.matrix(
+  empirical_data[, c("outcome_a1", "outcome_a2", "outcome_a3")]
 )
 
-EMPIRICAL_OUTCOMES_B <- cbind(
-  empirical_data$outcome_b1,
-  empirical_data$outcome_b2,
-  empirical_data$outcome_b3
+OUTCOMES_B <- as.matrix(
+  empirical_data[, c("outcome_b1", "outcome_b2", "outcome_b3")]
 )
-
-EMPIRICAL_CORRECT_CHOICE <- empirical_data$correct_choice
-
-gamble_set <- read_csv("../data/gamble_list.csv") %>% 
-  filter(sanity_check == FALSE) %>% 
-  mutate(
-    correct_choice = ifelse(ev_diff < 0, 1, 0),
-    correct_choice = ifelse(ev_diff == 0, NA, correct_choice)
-  )
 
 cpt_model <- cmdstan_model(
-  '../stan_models/model_2_2.stan',
-  cpp_options = list(stan_threads = TRUE),
-  force_recompile = TRUE
+  "../stan_models/model_2_2.stan",
+  cpp_options = list(stan_threads = TRUE)
+)
+
+PARAMETER_NAMES <- c(
+  "lambda", "alpha", "tau", "gamma",
+  "lambda_out", "alpha_out", "tau_out", "gamma_out",
+  "intercept_lambda", "intercept_alpha",
+  "intercept_tau", "intercept_gamma",
+  "b_lambda", "b_alpha", "b_tau", "b_gamma"
 )
 
 # ---------------------------------------------------------------------------- #
 # HELPER FUNCTIONS
 # ---------------------------------------------------------------------------- #
-get_prelec_weights <- function(p, gamma) {
+softplus <- function(x) {
+  log1p(exp(-abs(x))) + pmax(x, 0)
+}
+
+prelec_weight <- function(p, gamma) {
   exp(-(-log(p))^gamma)
 }
 
 get_cpt_utility <- function(outcomes, lambda, alpha, gamma) {
-  stopifnot(length(outcomes) == 3)
+  values <- numeric(length(outcomes))
+  gains <- outcomes >= 0
+  values[gains] <- outcomes[gains]^alpha
+  values[!gains] <- -lambda * abs(outcomes[!gains])^alpha
   
-  # value function
-  v <- numeric(3)
-  for (k in 1:3) {
-    if (outcomes[k] >= 0) {
-      v[k] <- outcomes[k]^alpha
-    } else {
-      v[k] <- -lambda * abs(outcomes[k])^alpha
-    }
-  }
+  values <- sort(values)
+  weight_one_third <- prelec_weight(1 / 3, gamma)
+  weight_two_thirds <- prelec_weight(2 / 3, gamma)
   
-  # sort by value (ascending)
-  idx <- order(v)
-  v <- v[idx]
-  
-  # decision weights
-  w1 <- get_prelec_weights(1/3, gamma)
-  w2 <- get_prelec_weights(2/3, gamma)
-  w3 <- 1
-  
-  utility <- w1 * v[1] + (w2 - w1) * v[2] + (w3 - w2) * v[3]
-  return(utility)
+  weight_one_third * values[1] +
+    (weight_two_thirds - weight_one_third) * values[2] +
+    weight_one_third * values[3]
 }
 
-simulate_choices <- function(
-    outcomes_a,
-    outcomes_b,
-    correct_choice,
-    id_vector,
-    condition,
-    lambda,
-    alpha,
-    tau,
-    gamma
-) {
-  N <- nrow(outcomes_a)
-  choices <- integer(N)
-  
-  for (i in 1:N) {
-    utility_a <- get_cpt_utility(
-      outcomes_a[i, ],
-      lambda[id_vector[i], condition[i]],
-      alpha[id_vector[i], condition[i]],
-      gamma[id_vector[i], condition[i]]
-    )
-    utility_b <- get_cpt_utility(
-      outcomes_b[i, ],
-      lambda[id_vector[i], condition[i]],
-      alpha[id_vector[i], condition[i]],
-      gamma[id_vector[i], condition[i]]
-    )
-    
-    logit_p <- logit_p <- tau[id_vector[i], condition[i]] * (utility_b - utility_a)
-    p <- plogis(logit_p)
-    choices[i] <- rbinom(1, 1, p)  # 1 = choose B
-  }
-  
-  correct <- as.numeric(choices == correct_choice)
-  
-  sim_data <- tibble(
-    id = id_vector,
-    condition = condition,
-    outcome_a1 = outcomes_a[ , 1],
-    outcome_a2 = outcomes_a[ , 2],
-    outcome_a3 = outcomes_a[ , 3],
-    outcome_b1 = outcomes_b[ , 1],
-    outcome_b2 = outcomes_b[ , 2],
-    outcome_b3 = outcomes_b[ , 3],
-    choice = choices,
-    correct_choice = correct_choice,
-    correct = correct
-  )
-  
-  return(sim_data)
-}
-
-sample_parameters <- function(num_subjects, sigma = 0.25) {
+sample_parameters <- function(num_subjects, random_effect_sd = 0.25) {
   effect_coding <- c(-0.5, 0.5)
   
-  intercept_lambda <- runif(1, 0.75, 2.75)
-  intercept_alpha  <- runif(1, -0.8, 0.25)
-  intercept_tau    <- runif(1, -0.25, 5.5)
-  intercept_gamma  <- runif(1, 0.05, 0.3)
+  # These ranges cover the empirically relevant region while avoiding
+  # near-deterministic choices in most simulated datasets.
+  intercept_lambda <- runif(1, 0.75, 2.50)
+  intercept_alpha <- runif(1, -0.50, 0.50)
+  intercept_tau <- runif(1, -1.50, 1.00)
+  intercept_gamma <- runif(1, -0.40, 0.70)
   
-  b_lambda <- rnorm(1, 0, 0.25)
-  b_alpha  <- rnorm(1, 0, 0.25)
-  b_tau    <- rnorm(1, 0, 0.25)
-  b_gamma  <- rnorm(1, 0, 0.25)
+  # The ranges include the condition effects estimated in the empirical data.
+  b_lambda <- runif(1, -1.50, 1.50)
+  b_alpha <- runif(1, -0.70, 0.70)
+  b_tau <- runif(1, -1.50, 1.50)
+  b_gamma <- runif(1, -0.70, 0.70)
   
-  mu_lambda <- log1p(exp(intercept_lambda + b_lambda * effect_coding))
-  mu_alpha  <- log1p(exp(intercept_alpha + b_alpha * effect_coding))
-  mu_tau    <- log1p(exp(intercept_tau + b_tau * effect_coding))
-  mu_gamma  <- log1p(exp(intercept_gamma + b_gamma * effect_coding))
+  fixed_effects <- c(
+    lambda = intercept_lambda,
+    alpha = intercept_alpha,
+    tau = intercept_tau,
+    gamma = intercept_gamma
+  )
   
-  # ---- subject random effects ----
-  z_lambda <- matrix(rnorm(2 * num_subjects), 2, num_subjects)
-  z_alpha  <- matrix(rnorm(2 * num_subjects), 2, num_subjects)
-  z_tau    <- matrix(rnorm(2 * num_subjects), 2, num_subjects)
-  z_gamma  <- matrix(rnorm(2 * num_subjects), 2, num_subjects)
+  condition_effects <- c(
+    lambda = b_lambda,
+    alpha = b_alpha,
+    tau = b_tau,
+    gamma = b_gamma
+  )
   
-  u_lambda <- sigma * z_lambda
-  u_alpha  <- sigma * z_alpha
-  u_tau    <- sigma * z_tau
-  u_gamma  <- sigma * z_gamma
-  
-  lambda <- matrix(0, 2, num_subjects)
-  alpha  <- matrix(0, 2, num_subjects)
-  tau    <- matrix(0, 2, num_subjects)
-  gamma  <- matrix(0, 2, num_subjects)
-  
-  for (c in 1:2) {
-    for (s in 1:num_subjects) {
-      lambda[c, s] <- log1p(exp(
-        intercept_lambda +
-          u_lambda[1, s] +
-          (b_lambda + u_lambda[2, s]) * effect_coding[c]
-      ))
-      alpha[c, s] <- log1p(exp(
-        intercept_alpha +
-          u_alpha[1, s] +
-          (b_alpha + u_alpha[2, s]) * effect_coding[c]
-      ))
-      tau[c, s] <- log1p(exp(
-        intercept_tau +
-          u_tau[1, s] +
-          (b_tau + u_tau[2, s]) * effect_coding[c]
-      ))
-      gamma[c, s] <- log1p(exp(
-        intercept_gamma +
-          u_gamma[1, s] +
-          (b_gamma + u_gamma[2, s]) * effect_coding[c]
-      ))
+  parameter_matrices <- map2(
+    fixed_effects,
+    condition_effects,
+    function(intercept, condition_effect) {
+      random_intercept <- rnorm(num_subjects, 0, random_effect_sd)
+      random_slope <- rnorm(num_subjects, 0, random_effect_sd)
+      
+      map_dfc(effect_coding, function(condition_code) {
+        softplus(
+          intercept +
+            random_intercept +
+            (condition_effect + random_slope) * condition_code
+        )
+      }) |>
+        as.matrix() |>
+        t()
     }
-  }
+  )
   
-  param_draws <- tibble(
-    subject = rep(1:num_subjects, each = 2),
-    condition = rep(1:2, num_subjects),
-    lambda = as.vector(lambda),
-    alpha = as.vector(alpha),
-    tau = as.vector(tau),
-    gamma = as.vector(gamma),
+  names(parameter_matrices) <- PARAMETER_LEVELS
+  
+  group_values <- map2(
+    fixed_effects,
+    condition_effects,
+    ~ softplus(.x + .y * effect_coding)
+  )
+  
+  tibble(
+    subject = rep(seq_len(num_subjects), each = 2),
+    condition = rep(1:2, times = num_subjects),
+    lambda = as.vector(parameter_matrices$lambda),
+    alpha = as.vector(parameter_matrices$alpha),
+    tau = as.vector(parameter_matrices$tau),
+    gamma = as.vector(parameter_matrices$gamma),
     intercept_lambda = intercept_lambda,
     intercept_alpha = intercept_alpha,
     intercept_tau = intercept_tau,
@@ -212,457 +172,557 @@ sample_parameters <- function(num_subjects, sigma = 0.25) {
     b_alpha = b_alpha,
     b_tau = b_tau,
     b_gamma = b_gamma,
-    mu_lambda = rep(mu_lambda, times = num_subjects),
-    mu_alpha = rep(mu_alpha, times = num_subjects),
-    mu_tau = rep(mu_tau, times = num_subjects),
-    mu_gamma = rep(mu_gamma, times = num_subjects)
+    mu_lambda = rep(group_values$lambda, times = num_subjects),
+    mu_alpha = rep(group_values$alpha, times = num_subjects),
+    mu_tau = rep(group_values$tau, times = num_subjects),
+    mu_gamma = rep(group_values$gamma, times = num_subjects)
   )
-  
-  return(param_draws)
-
 }
 
-cpt_init_fun <- function(chains = 4, n = N) {
-  inits <- vector("list", chains)
-  for (i in 1:chains) {
-    inits[[i]] <- list(
-      intercept_lambda = rnorm(1, 2, 0.5),
-      intercept_alpha  = rnorm(1, 0, 0.5),
-      intercept_tau    = rnorm(1, 0.5, 0.5),
-      intercept_gamma  = rnorm(1, 0, 0.3),
-      b_lambda = rnorm(1, 0, 0.2),
-      b_alpha  = rnorm(1, 0, 0.2),
-      b_tau    = rnorm(1, 0, 0.2),
-      b_gamma  = rnorm(1, 0, 0.2),
-      sigma_lambda = rnorm(2, 0, 0.5),
-      sigma_alpha  = rnorm(2, 0, 0.5),
-      sigma_tau    = rnorm(2, 0, 0.5),
-      sigma_gamma  = rnorm(2, 0, 0.5),
-      z_lambda = matrix(rnorm(n * 2, 0, 0.5), n, 2),
-      z_alpha  = matrix(rnorm(n * 2, 0, 0.5), n, 2),
-      z_tau    = matrix(rnorm(n * 2, 0, 0.5), n, 2),
-      z_gamma  = matrix(rnorm(n * 2, 0, 0.5), n, 2),
+make_parameter_matrix <- function(true_parameters, sim_id, parameter) {
+  values <- true_parameters |>
+    filter(.data$sim_id == sim_id) |>
+    arrange(subject, condition) |>
+    pull(all_of(parameter))
+  
+  stopifnot(length(values) == 2 * NUM_SUBJECTS)
+  matrix(values, nrow = 2, ncol = NUM_SUBJECTS)
+}
+
+simulate_choices <- function(true_parameters, sim_id) {
+  lambda <- make_parameter_matrix(true_parameters, sim_id, "lambda")
+  alpha <- make_parameter_matrix(true_parameters, sim_id, "alpha")
+  tau <- make_parameter_matrix(true_parameters, sim_id, "tau")
+  gamma <- make_parameter_matrix(true_parameters, sim_id, "gamma")
+  
+  choices <- map_int(seq_len(NUM_TRIALS), function(i) {
+    subject <- SUBJECT_ID[i]
+    condition <- CONDITION[i]
+    
+    utility_a <- get_cpt_utility(
+      OUTCOMES_A[i, ],
+      lambda[condition, subject],
+      alpha[condition, subject],
+      gamma[condition, subject]
+    )
+    
+    utility_b <- get_cpt_utility(
+      OUTCOMES_B[i, ],
+      lambda[condition, subject],
+      alpha[condition, subject],
+      gamma[condition, subject]
+    )
+    
+    choice_probability <- plogis(
+      tau[condition, subject] * (utility_b - utility_a)
+    )
+    
+    rbinom(1, 1, choice_probability)
+  })
+  
+  choices
+}
+
+make_stan_data <- function(choices) {
+  list(
+    T = NUM_TRIALS,
+    N = NUM_SUBJECTS,
+    subject_id = SUBJECT_ID,
+    gamble_type = CONDITION,
+    outcomes_a = OUTCOMES_A,
+    outcomes_b = OUTCOMES_B,
+    choice = choices
+  )
+}
+
+cpt_init_fun <- function(chains = NUM_CHAINS, n = NUM_SUBJECTS) {
+  map(seq_len(chains), function(chain) {
+    list(
+      intercept_lambda = rnorm(1, 1.5, 0.5),
+      intercept_alpha = rnorm(1, 0, 0.5),
+      intercept_tau = rnorm(1, 0, 0.5),
+      intercept_gamma = rnorm(1, 0, 0.3),
+      b_lambda = rnorm(1, 0, 0.3),
+      b_alpha = rnorm(1, 0, 0.3),
+      b_tau = rnorm(1, 0, 0.3),
+      b_gamma = rnorm(1, 0, 0.3),
+      sigma_lambda = rnorm(2, -1, 0.3),
+      sigma_alpha = rnorm(2, -1, 0.3),
+      sigma_tau = rnorm(2, -1, 0.3),
+      sigma_gamma = rnorm(2, -1, 0.3),
+      z_lambda = matrix(rnorm(n * 2), n, 2),
+      z_alpha = matrix(rnorm(n * 2), n, 2),
+      z_tau = matrix(rnorm(n * 2), n, 2),
+      z_gamma = matrix(rnorm(n * 2), n, 2),
       Omega_lambda = diag(2),
-      Omega_alpha  = diag(2),
-      Omega_tau    = diag(2),
-      Omega_gamma  = diag(2)
+      Omega_alpha = diag(2),
+      Omega_tau = diag(2),
+      Omega_gamma = diag(2)
     )
+  })
+}
+
+summarise_fit <- function(fit) {
+  draws <- fit$draws(
+    variables = PARAMETER_NAMES,
+    format = "draws_matrix"
+  )
+  
+  estimates <- map_dfr(seq_len(ncol(draws)), function(column) {
+    values <- draws[, column]
+    
+    tibble(
+      variable = colnames(draws)[column],
+      median = median(values),
+      ci_lower = quantile(values, 0.025),
+      ci_upper = quantile(values, 0.975)
+    )
+  })
+  
+  diagnostics <- fit$summary(variables = PARAMETER_NAMES) |>
+    select(variable, rhat, ess_bulk, ess_tail)
+  
+  left_join(estimates, diagnostics, by = "variable")
+}
+
+safe_correlation <- function(x, y) {
+  if (length(x) < 2 || sd(x) == 0 || sd(y) == 0) {
+    return(NA_real_)
   }
-  return(inits)
+  
+  cor(x, y)
 }
 
-# ---------------------------------------------------------------------------- #
-# SAMPLING PARAMETERS
-# ---------------------------------------------------------------------------- #
-prior_draws <- tibble()
-for (i in seq_len(NUM_SIMS)) {
-  draws <- sample_parameters(NUM_SUBJECTS)
-  draws$sim_id <- i
-  prior_draws <- prior_draws %>% 
-    bind_rows(draws)
-}
-
-# write_csv(prior_draws, "../data/simulation_data/true_parameter.csv")
-
-# ---------------------------------------------------------------------------- #
-# DATA SIMULATION
-# ---------------------------------------------------------------------------- #
-prior_draws <- read_csv("../data/simulation_data/true_parameter.csv")
-
-sim_data <- tibble()
-
-for (i in seq_len(NUM_SIMS)) {
-  lambda <- cbind(
-    prior_draws$lambda[prior_draws$sim_id == i & prior_draws$condition == 1],
-    prior_draws$lambda[prior_draws$sim_id == i & prior_draws$condition == 2]
-  )
-  alpha <- cbind(
-    prior_draws$alpha[prior_draws$sim_id == i & prior_draws$condition == 1],
-    prior_draws$alpha[prior_draws$sim_id == i & prior_draws$condition == 2]
-  )
-  tau <- cbind(
-    prior_draws$tau[prior_draws$sim_id == i & prior_draws$condition == 1],
-    prior_draws$tau[prior_draws$sim_id == i & prior_draws$condition == 2]
-  )
-  gamma <- cbind(
-    prior_draws$gamma[prior_draws$sim_id == i & prior_draws$condition == 1],
-    prior_draws$gamma[prior_draws$sim_id == i & prior_draws$condition == 2]
-  )
-  
-  tmp_data <- simulate_choices(
-    EMPIRICAL_OUTCOMES_A,
-    EMPIRICAL_OUTCOMES_B,
-    EMPIRICAL_CORRECT_CHOICE,
-    ID_VECTOR,
-    CONDITION,
-    lambda, alpha, tau, gamma
-  )
-  
-  tmp_data$sim_id <- i
-  
-  sim_data <- sim_data %>% 
-    bind_rows(tmp_data)
-}
-
-summary <- sim_data %>% 
-  group_by(id, sim_id) %>% 
-  summarise(acc = mean(correct, na.rm=TRUE))
-
-hist(summary$acc, breaks=100)
-
-# write_csv(sim_data, "../data/simulation_data/sim_data.csv")
-
-# ---------------------------------------------------------------------------- #
-# MODEL FITTING
-# ---------------------------------------------------------------------------- #
-sim_data <- read_csv("../data/simulation_data/sim_data.csv")
-
-param_names <- c(
-  "lambda", "alpha", "tau", "gamma",
-  "lambda_out", "alpha_out", "tau_out", "gamma_out",
-  "intercept_lambda", "intercept_alpha", "intercept_tau", "intercept_gamma",
-  "b_lambda", "b_alpha", "b_tau", "b_gamma"
-)
-
-for (i in 2:NUM_SIMS) {
-  tmp_data <- sim_data %>% 
-    filter(sim_id == i)
-  
-  N <- length(unique(tmp_data$id))
-  `T` <- nrow(tmp_data)
-  stan_data = list(
-    `T`         = `T`,
-    N           = N,
-    subject_id  = tmp_data$id,
-    gamble_type = tmp_data$condition,
-    outcomes_a   = as.matrix(tmp_data[, c("outcome_a1", "outcome_a2", "outcome_a3")]),
-    outcomes_b   = as.matrix(tmp_data[, c("outcome_b1", "outcome_b2", "outcome_b3")]),
-    choice      = tmp_data$choice
-  )
-  
-  model_fit <- cpt_model$sample(
-    data = stan_data,
-    init = cpt_init_fun(),
-    max_treedepth = 8,
-    adapt_delta = 0.8,
-    refresh = 100,
-    iter_sampling = 1000,
-    iter_warmup = 1000,
-    chains = 4,
-    parallel_chains = 4,
-    threads_per_chain = 2,
-    save_warmup = TRUE
-  )
-  
-  model_fit$draws(
-    variables = param_names,
-    format = "df"
-  ) %>%
-    as_tibble() %>%
-    write_csv(
-      paste0("../data/simulation_data/recovery/estimated_params_", i, ".csv")
+summarise_recovery <- function(data, grouping_variables) {
+  data |>
+    group_by(across(all_of(grouping_variables))) |>
+    summarise(
+      n = n(),
+      correlation = safe_correlation(true_value, estimate),
+      bias = mean(estimate - true_value),
+      rmse = sqrt(mean((estimate - true_value)^2)),
+      coverage = mean(ci_lower <= true_value & ci_upper >= true_value),
+      mean_interval_width = mean(ci_upper - ci_lower),
+      .groups = "drop"
     )
 }
 
-# ---------------------------------------------------------------------------- #
-# EVALUATION: GROUP-LEVEL
-# ---------------------------------------------------------------------------- #
-true_params <- read_csv("../data/simulation_data/true_parameter.csv")
-
-files <- fs::dir_ls("../data/simulation_data/recovery/", glob = "*.csv")
-
-group_params_all <- tibble()
-individual_params_all <- tibble()
-
-for (file in files) {
-  estimated_params <- read_csv(file, show_col_types = FALSE)
-  sim_id <- as.integer(str_extract(basename(file), "\\d+"))
-  
-  # ---- long format ----
-  long <- estimated_params %>%
-    pivot_longer(
-      cols = everything(),
-      names_to = "param",
-      values_to = "value"
-    ) %>%
-    mutate(sim_id = sim_id)
-  
-  # ---- group-level ----
-  group_params <- long %>%
-    filter(str_detect(param, "_out")) %>%
+get_axis_limits <- function(data, facet_variable) {
+  data |>
+    group_by(across(all_of(facet_variable))) |>
+    summarise(
+      minimum = min(true_value, estimate, na.rm = TRUE),
+      maximum = max(true_value, estimate, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
     mutate(
-      base_param = str_extract(param, "^[^_]+"),
-      condition  = as.integer(str_extract(param, "(?<=\\[)\\d+(?=\\])"))
-    ) %>%
-    select(sim_id, base_param, condition, value)
-  
-  # ---- individual-level ----
-  individual_params <- long %>%
-    filter(!str_detect(param, "_out")) %>%
-    mutate(
-      base_param = str_extract(param, "^[^\\[]+"),
-      condition  = as.integer(str_extract(param, "(?<=\\[)\\d+(?=,)")),
-      id         = as.integer(str_extract(param, "(?<=,)\\d+(?=\\])"))
-    ) %>%
-    select(sim_id, base_param, id, condition, value)
-  
-  group_params_all <- bind_rows(group_params_all, group_params)
-  individual_params_all <- bind_rows(individual_params_all, individual_params)
+      xmin = floor(minimum * 10) / 10,
+      xmax = ceiling(maximum * 10) / 10,
+      xmax = if_else(xmax <= xmin, xmin + 0.1, xmax)
+    ) |>
+    select(all_of(facet_variable), xmin, xmax)
 }
-
-group_summary <- group_params_all %>%
-  group_by(sim_id, base_param, condition) %>%
-  summarise(
-    mean = median(value),
-    .groups = "drop"
-  )
-
-group_true <- true_params %>% 
-  group_by(sim_id, condition) %>% 
-  summarise(
-    lambda = mu_lambda[1],
-    alpha  = mu_alpha[1],
-    tau    = mu_tau[1],
-    gamma  = mu_gamma[1],
-    .groups = "drop"
-  ) %>% 
-  pivot_longer(
-    cols = c(lambda, alpha, tau, gamma),
-    names_to = "base_param",
-    values_to = "true_value"
-  )
-
-group_recovery <- group_summary %>%
-  rename(estimate = mean) %>%
-  inner_join(
-    group_true,
-    by = c("sim_id", "condition", "base_param")
-  ) %>%
-  mutate(
-    condition = recode(
-      as.character(condition),
-      `1` = "Aligned",
-      `2` = "Opposed"
-    ),
-    base_param = factor(
-      base_param,
-      levels = c("lambda", "alpha", "tau", "gamma")
-    )
-  )
 
 make_recovery_plot <- function(
     data,
-    condition_label,
-    axis_limits,
-    font_size_1 = 18,
-    font_size_2 = 16,
-    font_size_3 = 14,
-    x_axis_label = "True value"
+    facet_variable,
+    facet_labels,
+    x_axis_label = "True value",
+    point_size = 1.5
 ) {
+  axis_limits <- get_axis_limits(data, facet_variable)
+  plot_data <- left_join(data, axis_limits, by = facet_variable)
   
-  df <- data %>%
-    filter(condition == condition_label) %>%
-    left_join(axis_limits, by = "base_param")
-  
-  ggplot(df, aes(x = true_value, y = estimate)) +
-    geom_point(alpha = 0.6) +
+  ggplot(plot_data, aes(x = true_value, y = estimate)) +
+    geom_point(alpha = 0.55, size = point_size) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    facet_wrap(
-      ~ base_param,
-      nrow = 1,
-      scales = "free",
-      labeller = as_labeller(PARAM_LABELS, default = label_parsed)
-    ) +
-    scale_x_continuous(n.breaks = 5) +
-    scale_y_continuous(n.breaks = 5) +
     geom_blank(aes(x = xmin, y = xmin)) +
     geom_blank(aes(x = xmax, y = xmax)) +
     geom_blank(aes(x = xmin, y = xmax)) +
     geom_blank(aes(x = xmax, y = xmin)) +
-    labs(
-      x = x_axis_label,
-      y = "Estimated value"
+    facet_wrap(
+      vars(!!sym(facet_variable)),
+      nrow = 1,
+      scales = "free",
+      labeller = as_labeller(facet_labels, default = label_parsed)
     ) +
-    ggthemes::theme_tufte(base_size = font_size_3) +
+    scale_x_continuous(n.breaks = 5) +
+    scale_y_continuous(n.breaks = 5) +
+    labs(x = x_axis_label, y = "Estimated value") +
+    ggthemes::theme_tufte(base_size = 14) +
     theme(
-      plot.title = element_text(
-        size = font_size_1,
-        hjust = 0.5,
-        margin = margin(b = 8)
-      ),
-      axis.title.x = element_text(size = font_size_2, margin = margin(t = 12)),
-      axis.title.y = element_text(size = font_size_2, margin = margin(r = 12)),
+      axis.title.x = element_text(size = 16, margin = margin(t = 12)),
+      axis.title.y = element_text(size = 16, margin = margin(r = 12)),
       axis.line = element_line(linewidth = 0.5, color = "#969696"),
       axis.ticks = element_line(color = "#969696"),
-      axis.ticks.length = unit(.25, "cm"),
-      strip.text = element_text(size = font_size_2),
+      strip.text = element_text(size = 16),
       panel.grid.major = element_line(color = scales::alpha("gray70", 0.3)),
       panel.grid.minor = element_line(color = scales::alpha("gray70", 0.15)),
       panel.background = element_blank(),
-      panel.spacing = unit(1.2, "lines"),
-      legend.position = "bottom",
-      legend.margin = margin(t = -5, r = 0, b = 0, l = 0),
-      legend.spacing.y = unit(0.2, "cm")
+      panel.spacing = unit(1.2, "lines")
     )
 }
 
-axis_limits <- group_recovery %>%
-  group_by(base_param) %>%
-  summarise(
-    xmin = round(min(true_value, estimate, na.rm = TRUE), 1),
-    xmax = round(max(true_value, estimate, na.rm = TRUE), 1),
-    .groups = "drop"
+# ---------------------------------------------------------------------------- #
+# GENERATE OR LOAD TRUE PARAMETERS
+# ---------------------------------------------------------------------------- #
+if (file.exists(TRUE_PARAMETER_FILE)) {
+  true_parameters <- read_csv(TRUE_PARAMETER_FILE, show_col_types = FALSE)
+} else {
+  true_parameters <- tibble()
+}
+
+existing_simulations <- if ("sim_id" %in% names(true_parameters)) {
+  unique(true_parameters$sim_id)
+} else {
+  integer()
+}
+missing_simulations <- setdiff(seq_len(NUM_SIMS), existing_simulations)
+
+if (length(missing_simulations) > 0) {
+  new_parameters <- map_dfr(missing_simulations, function(sim_id) {
+    sample_parameters(NUM_SUBJECTS) |>
+      mutate(sim_id = sim_id, .before = 1)
+  })
+  
+  true_parameters <- bind_rows(true_parameters, new_parameters) |>
+    arrange(sim_id, subject, condition)
+  
+  write_csv(true_parameters, TRUE_PARAMETER_FILE)
+}
+
+true_parameters <- true_parameters |>
+  filter(sim_id <= NUM_SIMS)
+
+# ---------------------------------------------------------------------------- #
+# SIMULATE DATA AND FIT THE MODEL
+# ---------------------------------------------------------------------------- #
+for (sim_id in seq_len(NUM_SIMS)) {
+  summary_file <- file.path(
+    SUMMARY_DIR,
+    paste0("estimated_parameters_", sim_id, ".csv")
   )
+  
+  if (file.exists(summary_file)) {
+    message("Skipping completed simulation ", sim_id)
+    next
+  }
+  
+  message("Simulation ", sim_id, " of ", NUM_SIMS)
+  
+  choice_file <- file.path(
+    CHOICE_DIR,
+    paste0("simulated_choices_", sim_id, ".csv")
+  )
+  
+  if (file.exists(choice_file)) {
+    choices <- read_csv(choice_file, show_col_types = FALSE) |>
+      pull(choice)
+  } else {
+    choices <- simulate_choices(true_parameters, sim_id)
+    
+    tibble(trial = seq_len(NUM_TRIALS), choice = choices) |>
+      write_csv(choice_file)
+  }
+  
+  choice_diagnostics <- tibble(
+    condition = CONDITION,
+    choice = choices
+  ) |>
+    group_by(condition) |>
+    summarise(
+      choice_rate = mean(choice),
+      .groups = "drop"
+    ) |>
+    mutate(sim_id = sim_id, .before = 1)
+  
+  write_csv(
+    choice_diagnostics,
+    file.path(DIAGNOSTIC_DIR, paste0("choice_rates_", sim_id, ".csv"))
+  )
+  
+  fit <- cpt_model$sample(
+    data = make_stan_data(choices),
+    init = cpt_init_fun(),
+    chains = 4,
+    parallel_chains = 4,
+    threads_per_chain = 2,
+    iter_warmup = 1000,
+    iter_sampling = 1000,
+    adapt_delta = 0.85,
+    max_treedepth = 8,
+    refresh = 200
+  )
+  
+  summarise_fit(fit) |>
+    mutate(sim_id = sim_id, .before = 1) |>
+    write_csv(summary_file)
+  
+  fit$diagnostic_summary() |>
+    as_tibble() |>
+    mutate(sim_id = sim_id, .before = 1) |>
+    write_csv(
+      file.path(DIAGNOSTIC_DIR, paste0("sampling_diagnostics_", sim_id, ".csv"))
+    )
+  
+  rm(fit)
+  gc()
+}
 
-plot_confounded <- make_recovery_plot(
-  group_recovery,
-  "Aligned",
-  axis_limits,
-  x_axis_label = NULL
-) +
-  ggtitle("Aligned")
-
-plot_unconfounded <- make_recovery_plot(
-  group_recovery,
-  "Opposed",
-  axis_limits
-) +
-  ggtitle("Opposed")
-
-final_plot <- plot_confounded / plot_unconfounded
-
-ggsave(
-  filename = "../plots/parameter_recovery.pdf",
-  plot = final_plot,
-  width = 10,
-  height = 6,
-  dpi = 300,
-  bg = "white"
+# ---------------------------------------------------------------------------- #
+# LOAD FIT SUMMARIES
+# ---------------------------------------------------------------------------- #
+summary_files <- list.files(
+  SUMMARY_DIR,
+  pattern = "^estimated_parameters_[0-9]+\\.csv$",
+  full.names = TRUE
 )
 
+if (length(summary_files) == 0) {
+  stop("No completed recovery fits were found.")
+}
+
+estimated_parameters <- map_dfr(summary_files, function(file) {
+  read_csv(file, show_col_types = FALSE)
+}) |>
+  filter(sim_id <= NUM_SIMS)
+
 # ---------------------------------------------------------------------------- #
-# EVALUATION: INDIVIDUAL-LEVEL
+# GROUP-LEVEL RECOVERY
 # ---------------------------------------------------------------------------- #
-individual_summary <- individual_params_all %>%
-  group_by(sim_id, id, base_param, condition) %>%
-  summarise(
-    mean = median(value),
-    .groups = "drop"
+group_estimates <- estimated_parameters |>
+  filter(str_detect(variable, "^(lambda|alpha|tau|gamma)_out\\[")) |>
+  mutate(
+    base_param = str_match(
+      variable,
+      "^(lambda|alpha|tau|gamma)_out\\[(1|2)\\]$"
+    )[, 2],
+    condition = as.integer(str_match(
+      variable,
+      "^(lambda|alpha|tau|gamma)_out\\[(1|2)\\]$"
+    )[, 3])
+  ) |>
+  transmute(
+    sim_id,
+    base_param,
+    condition,
+    estimate = median,
+    ci_lower,
+    ci_upper
   )
 
-individual_true <- true_params %>% 
-  rename(id = subject) %>% 
+group_true <- true_parameters |>
+  group_by(sim_id, condition) |>
+  summarise(
+    lambda = first(mu_lambda),
+    alpha = first(mu_alpha),
+    tau = first(mu_tau),
+    gamma = first(mu_gamma),
+    .groups = "drop"
+  ) |>
   pivot_longer(
-    cols = c(lambda, alpha, tau, gamma),
+    cols = all_of(PARAMETER_LEVELS),
     names_to = "base_param",
     values_to = "true_value"
-  ) %>%
-  select(sim_id, id, base_param, condition, true_value)
+  )
 
-individual_recovery <- individual_summary %>%
-  rename(estimate = mean) %>%
+group_recovery <- group_estimates |>
   inner_join(
-    individual_true,
-    by = c("sim_id", "id", "base_param", "condition")
-  ) %>%
+    group_true,
+    by = c("sim_id", "base_param", "condition")
+  ) |>
   mutate(
     condition = recode(
       as.character(condition),
       `1` = "Aligned",
       `2` = "Opposed"
     ),
-    base_param = factor(
-      base_param,
-      levels = c("lambda", "alpha", "tau", "gamma")
-    )
+    base_param = factor(base_param, levels = PARAMETER_LEVELS)
   )
 
-axis_limits_individual <- individual_recovery %>%
-  group_by(base_param) %>%
+group_metrics <- summarise_recovery(
+  group_recovery,
+  c("base_param", "condition")
+)
+
+write_csv(group_metrics, file.path(RECOVERY_DIR, "group_recovery_metrics.csv"))
+
+# ---------------------------------------------------------------------------- #
+# CONDITION-EFFECT RECOVERY
+# ---------------------------------------------------------------------------- #
+effect_estimates <- estimated_parameters |>
+  filter(str_detect(variable, "^b_(lambda|alpha|tau|gamma)$")) |>
+  transmute(
+    sim_id,
+    term = variable,
+    estimate = median,
+    ci_lower,
+    ci_upper
+  )
+
+effect_true <- true_parameters |>
+  group_by(sim_id) |>
   summarise(
-    xmin = round(min(true_value, estimate, na.rm = TRUE), 1),
-    xmax = round(max(true_value, estimate, na.rm = TRUE), 1),
+    b_lambda = first(b_lambda),
+    b_alpha = first(b_alpha),
+    b_tau = first(b_tau),
+    b_gamma = first(b_gamma),
     .groups = "drop"
+  ) |>
+  pivot_longer(
+    cols = starts_with("b_"),
+    names_to = "term",
+    values_to = "true_value"
   )
 
-make_recovery_plot_individual <- function(
-    data,
-    condition_label,
-    axis_limits,
-    font_size_1 = 18,
-    font_size_2 = 16,
-    font_size_3 = 14,
-    x_axis_label = "True value"
-) {
-  
-  df <- data %>%
-    filter(condition == condition_label) %>%
-    left_join(axis_limits, by = "base_param")
-  
-  ggplot(df, aes(x = true_value, y = estimate)) +
-    geom_point(alpha = 0.5, size = 0.4) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    facet_wrap(
-      ~ base_param,
-      nrow = 1,
-      scales = "free",
-      labeller = as_labeller(PARAM_LABELS, default = label_parsed)
-    ) +
-    scale_x_continuous(n.breaks = 5) +
-    scale_y_continuous(n.breaks = 5) +
-    geom_blank(aes(x = xmin, y = xmin)) +
-    geom_blank(aes(x = xmax, y = xmax)) +
-    geom_blank(aes(x = xmin, y = xmax)) +
-    geom_blank(aes(x = xmax, y = xmin)) +
-    labs(
-      x = x_axis_label,
-      y = "Estimated value"
-    ) +
-    ggthemes::theme_tufte(base_size = font_size_3) +
-    theme(
-      plot.title = element_text(
-        size = font_size_1,
-        hjust = 0.5,
-        margin = margin(b = 8)
-      ),
-      axis.title.x = element_text(size = font_size_2, margin = margin(t = 12)),
-      axis.title.y = element_text(size = font_size_2, margin = margin(r = 12)),
-      axis.line = element_line(linewidth = 0.5, color = "#969696"),
-      axis.ticks = element_line(color = "#969696"),
-      axis.ticks.length = unit(.25, "cm"),
-      strip.text = element_text(size = font_size_2),
-      panel.grid.major = element_line(color = scales::alpha("gray70", 0.3)),
-      panel.grid.minor = element_line(color = scales::alpha("gray70", 0.15)),
-      panel.background = element_blank(),
-      panel.spacing = unit(1.2, "lines"),
-      legend.position = "bottom",
-      legend.margin = margin(t = -5, r = 0, b = 0, l = 0),
-      legend.spacing.y = unit(0.2, "cm")
+effect_recovery <- effect_estimates |>
+  inner_join(effect_true, by = c("sim_id", "term")) |>
+  mutate(
+    term = factor(
+      term,
+      levels = c("b_lambda", "b_alpha", "b_tau", "b_gamma")
     )
-}
+  )
 
-plot_confounded_individual <- make_recovery_plot_individual(
+effect_metrics <- summarise_recovery(effect_recovery, "term")
+
+write_csv(
+  effect_metrics,
+  file.path(RECOVERY_DIR, "condition_effect_recovery_metrics.csv")
+)
+
+# ---------------------------------------------------------------------------- #
+# INDIVIDUAL-LEVEL RECOVERY
+# ---------------------------------------------------------------------------- #
+individual_matches <- str_match(
+  estimated_parameters$variable,
+  "^(lambda|alpha|tau|gamma)\\[(1|2),([0-9]+)\\]$"
+)
+
+individual_estimates <- estimated_parameters |>
+  mutate(
+    base_param = individual_matches[, 2],
+    condition = as.integer(individual_matches[, 3]),
+    id = as.integer(individual_matches[, 4])
+  ) |>
+  filter(!is.na(base_param)) |>
+  transmute(
+    sim_id,
+    id,
+    base_param,
+    condition,
+    estimate = median,
+    ci_lower,
+    ci_upper
+  )
+
+individual_true <- true_parameters |>
+  rename(id = subject) |>
+  pivot_longer(
+    cols = all_of(PARAMETER_LEVELS),
+    names_to = "base_param",
+    values_to = "true_value"
+  ) |>
+  select(sim_id, id, base_param, condition, true_value)
+
+individual_recovery <- individual_estimates |>
+  inner_join(
+    individual_true,
+    by = c("sim_id", "id", "base_param", "condition")
+  ) |>
+  mutate(
+    condition = recode(
+      as.character(condition),
+      `1` = "Aligned",
+      `2` = "Opposed"
+    ),
+    base_param = factor(base_param, levels = PARAMETER_LEVELS)
+  )
+
+individual_metrics <- summarise_recovery(
   individual_recovery,
-  "Aligned",
-  axis_limits_individual,
+  c("base_param", "condition")
+)
+
+write_csv(
+  individual_metrics,
+  file.path(RECOVERY_DIR, "individual_recovery_metrics.csv")
+)
+
+# ---------------------------------------------------------------------------- #
+# RECOVERY PLOTS
+# ---------------------------------------------------------------------------- #
+plot_group_aligned <- make_recovery_plot(
+  filter(group_recovery, condition == "Aligned"),
+  "base_param",
+  PARAMETER_LABELS,
   x_axis_label = NULL
 ) +
-  ggtitle("Aligned")
+  ggtitle("Aligned") +
+  theme(plot.title = element_text(size = 18, hjust = 0.5))
 
-plot_unconfounded_individual <- make_recovery_plot_individual(
-  individual_recovery,
-  "Opposed",
-  axis_limits_individual
+plot_group_opposed <- make_recovery_plot(
+  filter(group_recovery, condition == "Opposed"),
+  "base_param",
+  PARAMETER_LABELS
 ) +
-  ggtitle("Opposed")
+  ggtitle("Opposed") +
+  theme(plot.title = element_text(size = 18, hjust = 0.5))
 
-final_plot_individual <- plot_confounded_individual / plot_unconfounded_individual
+group_plot <- plot_group_aligned / plot_group_opposed
 
 ggsave(
-  filename = "../plots/parameter_recovery_individual.pdf",
-  plot = final_plot_individual,
+  "../plots/parameter_recovery.pdf",
+  group_plot,
   width = 10,
   height = 6,
-  dpi = 300,
   bg = "white"
 )
+
+effect_plot <- make_recovery_plot(
+  effect_recovery,
+  "term",
+  EFFECT_LABELS,
+  x_axis_label = "True condition coefficient"
+)
+
+ggsave(
+  "../plots/parameter_recovery_condition_effects.pdf",
+  effect_plot,
+  width = 10,
+  height = 3.5,
+  bg = "white"
+)
+
+plot_individual_aligned <- make_recovery_plot(
+  filter(individual_recovery, condition == "Aligned"),
+  "base_param",
+  PARAMETER_LABELS,
+  x_axis_label = NULL,
+  point_size = 0.35
+) +
+  ggtitle("Aligned") +
+  theme(plot.title = element_text(size = 18, hjust = 0.5))
+
+plot_individual_opposed <- make_recovery_plot(
+  filter(individual_recovery, condition == "Opposed"),
+  "base_param",
+  PARAMETER_LABELS,
+  point_size = 0.35
+) +
+  ggtitle("Opposed") +
+  theme(plot.title = element_text(size = 18, hjust = 0.5))
+
+individual_plot <- plot_individual_aligned / plot_individual_opposed
+
+ggsave(
+  "../plots/parameter_recovery_individual.pdf",
+  individual_plot,
+  width = 10,
+  height = 6,
+  bg = "white"
+)
+
+print(group_metrics, n = Inf)
+print(effect_metrics, n = Inf)
+print(individual_metrics, n = Inf)

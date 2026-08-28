@@ -44,22 +44,17 @@ M3_PARAM_NAMES <- c(
 # ---------------------------------------------------------------------------- #
 # MODEL COMPARISON
 # ---------------------------------------------------------------------------- #
-loos <- list()
-for (i in seq_along(models)) {
-  model <- models[i]
-  model_fit <- readRDS(paste0("../fits/", model, ".rds"))
+loos <- set_names(vector("list", length(models)), models)
+
+for (model in models) {
+  model_fit <- readRDS(file.path("../fits", paste0(model, ".rds")))
   log_lik <- model_fit$draws("log_lik", format = "draws_array")
-  loo_model <- loo(log_lik, cores = getOption("mc.cores", 8))
-  loos[[i]] <- loo_model
-  rm(model_fit)
+  loos[[model]] <- loo(log_lik, cores = getOption("mc.cores", 8))
+  rm(model_fit, log_lik)
   gc()
 }
 
-model_comparison <- loo_compare(
-  loos[[1]], loos[[2]], loos[[3]], loos[[4]],
-  loos[[5]], loos[[6]], loos[[7]], loos[[8]],
-  loos[[9]], loos[[10]]
-  )
+model_comparison <- loo_compare(loos)
 
 model_comparison %>%
   as_tibble(rownames = "model") %>% 
@@ -107,14 +102,26 @@ estimate_summary <- draws_tidy %>%
 
 
 calc_BF <- function(posterior_samples, prior_sd = 0.5) {
-  post_density <- density(posterior_samples, bw = "nrd0")
-  posterior_at_zero <- approx(post_density$x, post_density$y, xout = 0)$y
-  if(is.na(posterior_at_zero) || posterior_at_zero < 1e-10) {
-    posterior_at_zero <- 1e-10
-  }
-  prior_at_zero <- dnorm(0, mean = 0, sd = prior_sd)
-  BF10 <- prior_at_zero / posterior_at_zero
-  return(BF10)
+  bandwidth <- bw.nrd0(posterior_samples)
+  log_kernel <- dnorm(
+    0,
+    mean = posterior_samples,
+    sd = bandwidth,
+    log = TRUE
+  )
+  
+  maximum <- max(log_kernel)
+  log_posterior_at_zero <- maximum +
+    log(mean(exp(log_kernel - maximum)))
+  
+  log_prior_at_zero <- dnorm(
+    0,
+    mean = 0,
+    sd = prior_sd,
+    log = TRUE
+  )
+  
+  exp(log_prior_at_zero - log_posterior_at_zero)
 }
 
 compute_BFs <- function(fit, param_names, prior_sd = 0.5) {
@@ -286,8 +293,8 @@ make_pp_plot <- function(
       aes(
         x = .data[[x_var]],
         y = mean_resp,
-        ymin = pmax(0, mean_resp - std_resp),
-        ymax = pmin(1, mean_resp + std_resp),
+        ymin = pmax(0, mean_resp - 1.96 * se_resp),
+        ymax = pmin(1, mean_resp + 1.96 * se_resp),
         color = gamble_type
       ),
       width = 0.05,
@@ -474,7 +481,7 @@ plot_loss_diff <- make_pp_plot(
 
 plot_var_diff <- make_pp_plot(
   x_var = "var_diff_bin",
-  x_label = "Absolute difference in variance",
+  x_label = "Absolute difference in std. dev.",
   x_breaks = var_bin_midpoints,
   x_labels = var_bin_labels
 )
@@ -522,7 +529,7 @@ draws_tidy_mvl <- draws_df %>%
     family = forcats::fct_relevel(family, "loss", "variance", "tau")
   )
 
-estimate_summary <- draws_tidy %>% 
+mvl_estimate_summary <- draws_tidy_mvl %>% 
   group_by(parameter) %>% 
   summarise(
     median = median(value),
@@ -533,14 +540,26 @@ estimate_summary <- draws_tidy %>%
 
 
 calc_BF <- function(posterior_samples, prior_sd = 0.5) {
-  post_density <- density(posterior_samples, bw = "nrd0")
-  posterior_at_zero <- approx(post_density$x, post_density$y, xout = 0)$y
-  if(is.na(posterior_at_zero) || posterior_at_zero < 1e-10) {
-    posterior_at_zero <- 1e-10
-  }
-  prior_at_zero <- dnorm(0, mean = 0, sd = prior_sd)
-  BF10 <- prior_at_zero / posterior_at_zero
-  return(BF10)
+  bandwidth <- bw.nrd0(posterior_samples)
+  log_kernel <- dnorm(
+    0,
+    mean = posterior_samples,
+    sd = bandwidth,
+    log = TRUE
+  )
+  
+  maximum <- max(log_kernel)
+  log_posterior_at_zero <- maximum +
+    log(mean(exp(log_kernel - maximum)))
+  
+  log_prior_at_zero <- dnorm(
+    0,
+    mean = 0,
+    sd = prior_sd,
+    log = TRUE
+  )
+  
+  exp(log_prior_at_zero - log_posterior_at_zero)
 }
 
 compute_BFs <- function(fit, param_names, prior_sd = 0.5) {
@@ -550,7 +569,16 @@ compute_BFs <- function(fit, param_names, prior_sd = 0.5) {
   })
 }
 
-bf_summary <- round(compute_BFs(fit_model, M3_PARAM_NAMES[c(3, 6, 9, 12)]), 2)
+mvl_effect_names <- c("beta_b_loss", "beta_b_var", "beta_tau")
+mvl_prior_sds <- c(0.5, 0.005, 0.5)
+
+mvl_bf_summary <- map2_dbl(
+  mvl_effect_names,
+  mvl_prior_sds,
+  ~ calc_BF(as.numeric(fit_model$draws(.x)), prior_sd = .y)
+) %>%
+  set_names(mvl_effect_names) %>%
+  round(2)
 
 mvl_model_params <- ggplot() +
   geom_density(
