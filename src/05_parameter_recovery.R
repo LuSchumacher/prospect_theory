@@ -7,7 +7,10 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 # ---------------------------------------------------------------------------- #
 # SETTINGS
 # ---------------------------------------------------------------------------- #
-NUM_SIMS <- 2
+NUM_SIMS <- 50
+NUM_CHAINS <- 4
+ITER_WARMUP <- 1000
+ITER_SAMPLING <- 1000
 
 RECOVERY_DIR <- "../data/simulation_data/recovery_cpt_sign_separated"
 TRUE_PARAMETER_FILE <- file.path(RECOVERY_DIR, "true_parameters.csv")
@@ -179,9 +182,9 @@ sample_parameters <- function(num_subjects, random_effect_sd = 0.25) {
   )
 }
 
-make_parameter_matrix <- function(true_parameters, sim_id, parameter) {
+make_parameter_matrix <- function(true_parameters, current_sim_id, parameter) {
   values <- true_parameters |>
-    filter(.data$sim_id == sim_id) |>
+    filter(.data$sim_id == .env$current_sim_id) |>
     arrange(subject, condition) |>
     pull(all_of(parameter))
   
@@ -382,7 +385,7 @@ missing_simulations <- setdiff(seq_len(NUM_SIMS), existing_simulations)
 if (length(missing_simulations) > 0) {
   new_parameters <- map_dfr(missing_simulations, function(sim_id) {
     sample_parameters(NUM_SUBJECTS) |>
-      mutate(sim_id = sim_id, .before = 1)
+      mutate(sim_id = .env$sim_id, .before = 1)
   })
   
   true_parameters <- bind_rows(true_parameters, new_parameters) |>
@@ -434,7 +437,7 @@ for (sim_id in seq_len(NUM_SIMS)) {
       choice_rate = mean(choice),
       .groups = "drop"
     ) |>
-    mutate(sim_id = sim_id, .before = 1)
+    mutate(sim_id = .env$sim_id, .before = 1)
   
   write_csv(
     choice_diagnostics,
@@ -444,23 +447,23 @@ for (sim_id in seq_len(NUM_SIMS)) {
   fit <- cpt_model$sample(
     data = make_stan_data(choices),
     init = cpt_init_fun(),
-    chains = 4,
-    parallel_chains = 4,
+    chains = NUM_CHAINS,
+    parallel_chains = NUM_CHAINS,
     threads_per_chain = 2,
-    iter_warmup = 1000,
-    iter_sampling = 1000,
-    adapt_delta = 0.85,
-    max_treedepth = 8,
+    iter_warmup = ITER_WARMUP,
+    iter_sampling = ITER_SAMPLING,
+    adapt_delta = 0.95,
+    max_treedepth = 12,
     refresh = 200
   )
   
   summarise_fit(fit) |>
-    mutate(sim_id = sim_id, .before = 1) |>
+    mutate(sim_id = .env$sim_id, .before = 1) |>
     write_csv(summary_file)
   
   fit$diagnostic_summary() |>
     as_tibble() |>
-    mutate(sim_id = sim_id, .before = 1) |>
+    mutate(sim_id = .env$sim_id, .before = 1) |>
     write_csv(
       file.path(DIAGNOSTIC_DIR, paste0("sampling_diagnostics_", sim_id, ".csv"))
     )
