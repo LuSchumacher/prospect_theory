@@ -6,4 +6,5 @@ data/study_data/
 data/simulation_data/
 data/stimulus_validity/
 00_data_preparation.R
+src/experimental
 fits/
