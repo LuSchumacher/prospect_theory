@@ -80,22 +80,22 @@ get_inits_mean_sd <- function(chains = 4, n = N) {
 }
 
 model_free_lambda <- cmdstan_model(
-  "pt_model_free_lambda.stan",
+  "../stan_models/pt_model_free_lambda.stan",
   cpp_options = list(stan_threads = TRUE)
 )
 
 model_free_alpha <- cmdstan_model(
-  "pt_model_free_alpha.stan",
+  "../stan_models/pt_model_free_alpha.stan",
   cpp_options = list(stan_threads = TRUE)
 )
 
 model_mean_variance <- cmdstan_model(
-  "mean_variance_model.stan",
+  "../stan_models/mean_variance_model.stan",
   cpp_options = list(stan_threads = TRUE)
 )
 
 model_mean_sd <- cmdstan_model(
-  "mean_standard_deviation_model.stan",
+  "../stan_models/mean_standard_deviation_model.stan",
   cpp_options = list(stan_threads = TRUE),
   force_recompile = TRUE
 )
@@ -126,7 +126,7 @@ fit_free_lambda <- model_free_lambda$sample(
   threads_per_chain = 2
 )
 
-fit_free_lambda$save_object("fit_free_lambda.rds")
+fit_free_lambda$save_object("../fits/fit_free_lambda.rds")
 
 # ---------------------------------------------------------------------------- #
 # FREE ALPHA
@@ -156,7 +156,7 @@ fit_free_alpha <- model_free_alpha$sample(
   threads_per_chain = 2
 )
   
-fit_free_alpha$save_object("fit_free_alpha.rds")
+fit_free_alpha$save_object("../fits/fit_free_alpha.rds")
 
 # ---------------------------------------------------------------------------- #
 # MEAN VARIANCE
@@ -184,7 +184,7 @@ fit_mean_variance <- model_mean_variance$sample(
   threads_per_chain = 2
 )
 
-fit_mean_variance$save_object("fit_mean_variance.rds")
+fit_mean_variance$save_object("../fits/fit_mean_variance.rds")
 
 # ---------------------------------------------------------------------------- #
 # MEAN STD
@@ -202,7 +202,7 @@ fit_mean_sd <- model_mean_sd$sample(
   threads_per_chain = 2
 )
 
-fit_mean_sd$save_object("fit_mean_sd.rds")
+fit_mean_sd$save_object("../fits/fit_mean_sd.rds")
 
 # ---------------------------------------------------------------------------- #
 # PARAMETER ESTIMATES
@@ -293,7 +293,7 @@ model_comp <- loo_compare(loos)
 print(model_comp, simplify = FALSE)
 write.csv(
   as.data.frame(model_comp),
-  "tom2007_loo_comparison.csv",
+  "../data/tom2007_loo_comparison.csv",
   row.names = TRUE
 )
 
@@ -469,7 +469,7 @@ tom2007_ppc <-
   theme(legend.position = "bottom")
 
 ggsave(
-  "tom2007_reanalysis.pdf",
+  "../plots/tom2007_reanalysis.pdf",
   plot_ev,
   device = "pdf",
   dpi = 300,

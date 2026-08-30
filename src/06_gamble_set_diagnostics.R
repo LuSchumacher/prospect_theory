@@ -1,8 +1,6 @@
 library(tidyverse)
 
-
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-
 
 OUTPUT_DIR <- "../data/stimulus_validity"
 dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
@@ -100,7 +98,6 @@ stopifnot(
 # ---------------------------------------------------------------------------- #
 # CONSTRUCTION CHECKS
 # ---------------------------------------------------------------------------- #
-
 validity_checks <- tibble(
   check = c(
     "Experimental stimuli",
@@ -132,7 +129,6 @@ expected_value_balance <- experimental_stimuli |>
 # ---------------------------------------------------------------------------- #
 # APPENDIX SUMMARY TABLE
 # ---------------------------------------------------------------------------- #
-
 ATTRIBUTE_LABELS <- c(
   "loss_magnitude_difference" = "Loss-magnitude difference (larger minus smaller)",
   "variance_difference" = "Variance difference (smaller-loss minus larger-loss option)",
@@ -182,7 +178,6 @@ stimulus_summary_appendix <- stimulus_summary |>
 # ---------------------------------------------------------------------------- #
 # CORRELATIONS
 # ---------------------------------------------------------------------------- #
-
 make_correlation_matrix <- function(data) {
   data |>
     select(all_of(summary_attributes)) |>
@@ -229,7 +224,6 @@ correlations_long <- imap_dfr(
 # ---------------------------------------------------------------------------- #
 # CORRELATION HEATMAP
 # ---------------------------------------------------------------------------- #
-
 SHORT_LABELS <- c(
   "loss_magnitude_difference" = "Loss magnitude",
   "variance_difference" = "Variance",
@@ -285,7 +279,6 @@ correlation_plot <- ggplot(
 # ---------------------------------------------------------------------------- #
 # SAVE AND PRINT
 # ---------------------------------------------------------------------------- #
-
 write_csv(stimulus_attributes, file.path(OUTPUT_DIR, "stimulus_attributes_all_trials.csv"))
 write_csv(experimental_stimuli, file.path(OUTPUT_DIR, "stimulus_attributes_experimental_trials.csv"))
 write_csv(validity_checks, file.path(OUTPUT_DIR, "stimulus_validity_checks.csv"))
@@ -308,3 +301,4 @@ ggsave(
 print(validity_checks, n = Inf)
 print(expected_value_balance, n = Inf)
 print(stimulus_summary_rounded, n = Inf)
+print(correlation_plot_data, n = Inf)

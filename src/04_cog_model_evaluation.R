@@ -57,14 +57,14 @@ for (model in models) {
 model_comparison <- loo_compare(loos)
 
 model_comparison %>%
-  as_tibble(rownames = "model") %>% 
+  as_tibble() %>% 
   mutate(across(where(is.numeric), ~ round(.x, 2))) %>%
-  write_csv("../data/model_comparison_2.csv")
+  write_csv("../data/model_comparison.csv")
 
 # ---------------------------------------------------------------------------- #
 # POSTERIOR ESTIMATES
 # ---------------------------------------------------------------------------- #
-fit_model <- readRDS(paste0("../fits/", models[7], ".rds"))
+fit_model <- readRDS("../fits/fit_model_2_2.rds")
 draws <- fit_model$draws(variables = M2_PARAM_NAMES)
 draws_df <- as_draws_df(draws)
 
@@ -91,18 +91,19 @@ draws_tidy <- draws_df %>%
     family = forcats::fct_relevel(family, "lambda", "alpha", "tau", "gamma")
   )
 
-estimate_summary <- draws_tidy %>% 
-  group_by(parameter) %>% 
+estimate_summary <- draws_tidy %>%
+  group_by(parameter) %>%
   summarise(
     median = median(value),
     ci_lower = quantile(value, 0.025),
-    ci_upper = quantile(value, 0.975)
-  ) %>% 
-  mutate(across(where(is.numeric), round, 2))
-
+    ci_upper = quantile(value, 0.975),
+    .groups = "drop"
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
 
 calc_BF <- function(posterior_samples, prior_sd = 0.5) {
   bandwidth <- bw.nrd0(posterior_samples)
+  
   log_kernel <- dnorm(
     0,
     mean = posterior_samples,
@@ -111,6 +112,7 @@ calc_BF <- function(posterior_samples, prior_sd = 0.5) {
   )
   
   maximum <- max(log_kernel)
+  
   log_posterior_at_zero <- maximum +
     log(mean(exp(log_kernel - maximum)))
   
@@ -126,38 +128,59 @@ calc_BF <- function(posterior_samples, prior_sd = 0.5) {
 
 compute_BFs <- function(fit, param_names, prior_sd = 0.5) {
   sapply(param_names, function(param) {
-    samples <- as.numeric(fit$draws(param))
+    samples <- as.numeric(fit$draws(variables = param))
     calc_BF(samples, prior_sd)
   })
 }
 
-bf_summary <- round(compute_BFs(fit_model, M2_PARAM_NAMES[c(3, 6, 9, 12)]), 2)
+effect_parameters <- c(
+  "b_lambda",
+  "b_alpha",
+  "b_tau",
+  "b_gamma"
+)
+
+bf_summary <- compute_BFs(
+  fit_model,
+  effect_parameters,
+  prior_sd = 0.5
+)
+
+bf_summary
+
+zero_lines <- draws_tidy %>%
+  filter(panel == "Effect of gamble type") %>%
+  distinct(family, panel)
 
 cpt_model_params <- ggplot() +
   geom_density(
     data = draws_tidy %>% filter(panel == "CPT parameters"),
     aes(x = value, fill = gamble_type),
-    alpha = 0.9, color = NA
+    alpha = 0.9,
+    color = NA
   ) +
-  scale_fill_manual(values = COLOR_PALETTE, name = "Gamble type") +
   geom_density(
     data = draws_tidy %>% filter(panel == "Effect of gamble type"),
     aes(x = value),
-    fill = "darkgray", alpha = 1, color = NA
+    fill = "darkgray",
+    alpha = 1,
+    color = NA
   ) +
+  geom_vline(
+    data = zero_lines,
+    aes(xintercept = 0),
+    linetype = "dashed",
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = COLOR_PALETTE, name = "Gamble type") +
   ggh4x::facet_grid2(
     family ~ panel,
     labeller = labeller(
       family = label_parsed,
-      panel  = label_value
+      panel = label_value
     ),
     scales = "free",
     independent = "all"
-  ) +
-  geom_vline(
-    data = draws_tidy %>% filter(panel == "Effect of gamble type"),
-    aes(xintercept = 0),
-    linetype = "dashed", inherit.aes = FALSE
   ) +
   labs(x = "Value", y = "Density") +
   ggthemes::theme_tufte(base_size = FONT_SIZE_2) +
@@ -169,21 +192,30 @@ cpt_model_params <- ggplot() +
     axis.text.x = element_text(size = FONT_SIZE_3, vjust = 0.5),
     axis.text.y = element_text(size = FONT_SIZE_3),
     strip.text.x = element_text(size = FONT_SIZE_2),
-    strip.text.y = element_text(size = FONT_SIZE_2, hjust = 0, angle = 0),
-    panel.grid.major = element_line(color = scales::alpha("gray70", 0.3)),
-    panel.grid.minor = element_line(color = scales::alpha("gray70", 0.15)),
+    strip.text.y = element_text(
+      size = FONT_SIZE_2,
+      hjust = 0,
+      angle = 0
+    ),
+    panel.grid.major = element_line(
+      color = scales::alpha("gray70", 0.3)
+    ),
+    panel.grid.minor = element_line(
+      color = scales::alpha("gray70", 0.15)
+    ),
     panel.background = element_blank(),
     panel.spacing = unit(1.2, "lines"),
     legend.position = "bottom",
     legend.margin = margin(t = -5, r = 0, b = 0, l = 0),
-    legend.spacing.y = unit(0.2, "cm"),
+    legend.spacing.y = unit(0.2, "cm")
   )
 
 ggsave(
-  '../plots/cpt_model_posteriors.pdf',
+  "../plots/cpt_model_posteriors.pdf",
   cpt_model_params,
-  device = 'pdf', dpi = 300,
-  width = 11, height = 9
+  device = "pdf",
+  width = 11,
+  height = 9
 )
 
 # -------------------------------------------------------------------------
@@ -248,7 +280,7 @@ summarise_empirical <- function(data, x_var) {
     summarise(
       mean_resp = mean(choice_prop,na.rm = TRUE),
       n_participants = n(),
-      std_resp = sd(choice_prop, na.rm = TRUE) / sqrt(n_participants),
+      se_resp = sd(choice_prop, na.rm = TRUE) / sqrt(n_participants),
       .groups = "drop"
     )
 }
@@ -447,7 +479,6 @@ trial_info <- emp_data %>%
     loss_diff, var_diff, abs_var_diff,
     var_diff_bin, skew_diff, skew_diff_bin
   )
-
 
 # PREPARE DRAWS
 # -------------
