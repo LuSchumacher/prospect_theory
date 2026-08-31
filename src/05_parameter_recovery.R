@@ -33,10 +33,10 @@ PARAMETER_LABELS <- c(
 )
 
 EFFECT_LABELS <- c(
-  b_lambda = expression(b[lambda]),
-  b_alpha = expression(b[alpha]),
-  b_tau = expression(b[tau]),
-  b_gamma = expression(b[gamma])
+  b_lambda = "b[lambda]",
+  b_alpha = "b[alpha]",
+  b_tau = "b[tau]",
+  b_gamma = "b[gamma]"
 )
 
 # ---------------------------------------------------------------------------- #
@@ -686,7 +686,7 @@ effect_plot <- make_recovery_plot(
   effect_recovery,
   "term",
   EFFECT_LABELS,
-  x_axis_label = "True condition coefficient"
+  x_axis_label = "True value"
 )
 
 ggsave(
